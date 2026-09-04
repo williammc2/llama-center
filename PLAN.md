@@ -89,6 +89,12 @@ is stored *inside* the file — it means "where the components go", not where th
 ### llama.cpp (nightlies — there is NO stable release; "latest" is a stub)
 - Real binaries are tagged `b####` assets, e.g.
   `llama-b10816-bin-win-cuda-12.9-x64.zip`, `llama-b10816-bin-ubuntu-22.04-cuda-12.9-x64.tar.gz`
+- **Windows CUDA ships as TWO assets** (verified against b10816 contents): the plain
+  build (all binaries, no CUDA runtime) + the `cudart-...` zip (ONLY cudart/cuBLAS/
+  cuBLASLt DLLs, no executables). Both are installed side by side — the resolver
+  picks the plain build as primary (`requestFromConfig` forces family=plain for
+  win+cuda) and `companionAsset` attaches the matching DLLs zip (same CUDA version
+  + arch). `updater.extract(merge=True)` combines them in staging.
 - "Check for updates" = find the **highest `b####`** that has an asset matching
   `{os}-{backend}` (cuda-12.x / cuda-13.x / vulkan / cpu)
 - Wizard asks backend: **CUDA 13 / CUDA 12 / Vulkan / CPU**. Auto-detect via

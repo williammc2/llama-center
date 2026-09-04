@@ -91,13 +91,17 @@ def _flatten(dest: Path) -> Path:
     return dest
 
 
-def extract(archive: Path, dest: Path) -> Path:
+def extract(archive: Path, dest: Path, merge: bool = False) -> Path:
     """Extract a zip / tar.gz into `dest` (replacing any previous staging).
 
     Returns the directory that holds the payload: `dest` itself for flat
     archives, the single top-level folder when the archive nests one.
+
+    `merge=True` extracts INTO an existing directory without wiping it — used
+    to combine a second archive (e.g. the Windows CUDA DLLs zip) with the
+    primary payload.
     """
-    if dest.exists():
+    if not merge and dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
     name = archive.name.lower()
@@ -112,6 +116,8 @@ def extract(archive: Path, dest: Path) -> Path:
             raise UpdateError(f"extract: unsupported archive type {archive.name}")
     except (zipfile.BadZipFile, tarfile.TarError, OSError) as e:
         raise UpdateError(f"extract: {e}") from e
+    if merge:
+        return dest
     return _flatten(dest)
 
 

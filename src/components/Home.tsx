@@ -3,7 +3,7 @@ import { bridge } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
 import { fetchLatestRelease, pickAsset, type SwapRelease } from '../lib/llamaSwapRelease'
-import { assetMeta, checkNightly, requestFromConfig, type NightlyCheck } from '../lib/llamaCppNightly'
+import { assetMeta, checkNightly, companionAsset, requestFromConfig, type NightlyCheck } from '../lib/llamaCppNightly'
 
 type Phase =
   | { status: 'idle' }
@@ -164,10 +164,13 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
   const cppAssetName = cppOk?.asset.name ?? null
   const cppBuild = cpp?.latest?.build ?? null
   // `latest.build` is one of `cpp.builds` (resolveLatest picks from it).
-  const cppMeta =
-    cpp && cppBuild && cppAssetName
-      ? assetMeta(cpp.builds.find((x) => x.info.tag === cppBuild.tag)!, cppAssetName)
-      : null
+  const cppBuildParsed = cpp && cppBuild ? (cpp.builds.find((x) => x.info.tag === cppBuild.tag) ?? null) : null
+  const cppMeta = cppBuildParsed && cppAssetName ? assetMeta(cppBuildParsed, cppAssetName) : null
+  // Windows CUDA: a second asset (the CUDA runtime DLLs) must be installed
+  // alongside the binaries.
+  const cppCompanion = cppBuildParsed && cppOk ? companionAsset(cppBuildParsed, cppOk.asset) : null
+  const cppCompanionMeta = cppBuildParsed && cppCompanion ? assetMeta(cppBuildParsed, cppCompanion.name) : null
+  const cppTotalMB = cppMeta ? Math.round((cppMeta.sizeBytes + (cppCompanionMeta?.sizeBytes ?? 0)) / (1024 * 1024)) : 0
 
   const cppUpdateLabel = !cppOk
     ? null
@@ -182,7 +185,14 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
     setBusy(true)
     try {
       setCppPhase({ status: 'downloading', message: `downloading ${cppMeta.name} (${Math.round(cppMeta.sizeBytes / (1024 * 1024))} MB)…` })
-      await bridge.downloadAndStage('llama-cpp', cppMeta.url, cppMeta.sha256)
+      const staging = await bridge.downloadAndStage('llama-cpp', cppMeta.url, cppMeta.sha256)
+      if (cppCompanion && cppCompanionMeta) {
+        setCppPhase({
+          status: 'downloading',
+          message: `downloading CUDA ${cppCompanion.version} DLLs — ${cppCompanionMeta.name} (${Math.round(cppCompanionMeta.sizeBytes / (1024 * 1024))} MB)…`,
+        })
+        await bridge.downloadAndStage('llama-cpp', cppCompanionMeta.url, cppCompanionMeta.sha256, staging)
+      }
       setCppPhase({ status: 'installing', message: 'installing…' })
       const backup = await bridge.swapComponent('llama-cpp')
       await bridge.saveConfig({ ...cfg, llamaCppInstalled: cppBuild.tag })
@@ -331,13 +341,19 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
           <div className="flex justify-between">
             <dt className="text-neutral-500">latest</dt>
             <dd className="font-mono text-neutral-200">
-              {cppOk && cppBuild ? `${cppBuild.tag} · ${cppAssetName}` : cpp ? 'no matching build' : 'not checked'}
+              {cppOk && cppBuild
+                ? `${cppBuild.tag} · ${cppAssetName}${cppCompanion ? ' + CUDA DLLs' : ''}`
+                : cpp
+                  ? 'no matching build'
+                  : 'not checked'}
             </dd>
           </div>
           {cppMeta && (
             <div className="flex justify-between">
               <dt className="text-neutral-500">size</dt>
-              <dd className="font-mono text-neutral-200">{Math.round(cppMeta.sizeBytes / (1024 * 1024))} MB</dd>
+              <dd className="font-mono text-neutral-200">
+                {cppTotalMB} MB{cppCompanion ? ' (binaries + CUDA DLLs)' : ''}
+              </dd>
             </div>
           )}
           <div className="flex justify-between">
@@ -363,6 +379,16 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
               className="rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-wait disabled:opacity-60"
             >
               {cppUpdateLabel}
+            </button>
+          )}
+          {cfg.llamaCppInstalled !== null && !cppUpdateLabel && (
+            <button
+              type="button"
+              onClick={() => void runCppUpdate()}
+              disabled={cppBusyAny || !cppOk}
+              className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+            >
+              Reinstall
             </button>
           )}
           {cppBackups.length > 0 && (
