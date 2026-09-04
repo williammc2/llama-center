@@ -112,6 +112,18 @@ class TestDownload:
         with pytest.raises(UpdateError, match="HTTP 404"):
             updater.download(url, tmp_path / "missing.zip")
 
+    def test_download_reports_progress(self, server, tmp_path):
+        url = f"http://127.0.0.1:{server['port']}/flat.zip"
+        data = server["files"]["flat.zip"]
+        dest = tmp_path / "flat.zip"
+        events: list[tuple[int, int | None]] = []
+        updater.download(url, dest, sha256_bytes(data), progress=lambda r, t: events.append((r, t)))
+        assert events, "progress callback was never invoked"
+        received, total = events[-1]
+        assert received == len(data)
+        assert total == len(data)  # the test server sends Content-Length
+        assert all(0 < r <= len(data) for r, _ in events)
+
 
 class TestExtract:
     def test_flat_zip_returns_dest(self, server, tmp_path):
