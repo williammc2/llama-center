@@ -27,6 +27,8 @@ export interface AppConfig {
   llamaCppPin: string | null
   /** llama-swap port. */
   llamaSwapPort: number
+  /** Installed llama-swap version (e.g. 253); null = not installed yet. */
+  llamaSwapInstalled: number | null
   /** UI language; default `en`. */
   lang: Lang
   /** App starts minimized to tray on login (P5). */
@@ -47,6 +49,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   cudaFamily: 'cudart',
   llamaCppPin: null,
   llamaSwapPort: 8085,
+  llamaSwapInstalled: null,
   lang: 'en',
   startWithSystem: false,
   autoStartLlamaSwap: false,
@@ -79,6 +82,15 @@ export function parseConfig(raw: unknown): AppConfig {
     return v
   }
 
+  // null or a positive int; present-but-wrong-type throws (like the other fields).
+  const swapInstalled = (v: unknown): number | null => {
+    if (v === undefined || v === null) return null
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
+      throw new Error('config: llamaSwapInstalled must be a positive int or null')
+    }
+    return v
+  }
+
   const backend = (o.backend ?? 'cpu') as Backend
   if (!['cpu', 'cuda', 'vulkan', 'rocm', 'sycl', 'openvino', 'opencl'].includes(backend)) {
     throw new Error(`config: unknown backend ${String(backend)}`)
@@ -96,6 +108,7 @@ export function parseConfig(raw: unknown): AppConfig {
     cudaFamily: o.cudaFamily === 'plain' ? 'plain' : 'cudart',
     llamaCppPin: o.llamaCppPin === null || typeof o.llamaCppPin === 'string' ? o.llamaCppPin : null,
     llamaSwapPort: num(o.llamaSwapPort, DEFAULT_CONFIG.llamaSwapPort),
+    llamaSwapInstalled: swapInstalled(o.llamaSwapInstalled),
     lang,
     startWithSystem: bool(o.startWithSystem, false),
     autoStartLlamaSwap: bool(o.autoStartLlamaSwap, false),

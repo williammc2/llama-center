@@ -10,6 +10,14 @@ P0 surface:
   - save_config(cfg) → writes config.json, returns the path
   - get_detection() → OS/arch/CUDA probe result
   - get_platform() → "win" | "linux" | "macos"
+
+P1 surface (llama-swap install/update):
+  - download_and_stage(url, sha256) → {staging} | {error}
+  - swap_llama_swap() → {backup} | {error}
+  - rollback_llama_swap() → {rolledBack} | {error}
+  - list_llama_swap_backups() → [names, newest first]
+  - probe_port(port) → bool
+  - stop_llama_swap() → bool
 """
 from __future__ import annotations
 
@@ -30,6 +38,7 @@ from llama_center.config import (  # noqa: E402
     parse_config,
     save_config,
 )
+from llama_center import updater  # noqa: E402
 from llama_center.detect import detect  # noqa: E402
 
 
@@ -67,6 +76,67 @@ class Api:
         except ConfigError as e:
             return {"error": str(e)}
 
+    # --- P1: llama-swap install/update -------------------------------------
+
+    def _dirs(self) -> dict:
+        """Managed paths for the configured install dir. Raises ConfigError."""
+        cfg = load_config()
+        if not cfg.install_dir:
+            raise ConfigError("install_dir not set — run the wizard first")
+        return updater.component_dirs(cfg.install_dir)
+
+    def download_and_stage(self, url: str, sha256: str | None = None) -> dict:
+        """Download a release asset, verify SHA-256, extract to staging.
+
+        Returns {staging: <content dir>} or {error}.
+        """
+        try:
+            d = self._dirs()
+            name = url.rsplit("/", 1)[-1].split("?")[0] or "llama-swap"
+            archive = d["downloads"] / name
+            updater.download(url, archive, sha256)
+            content = updater.extract(archive, d["staging"])
+            return {"staging": str(content)}
+        except (ConfigError, updater.UpdateError, OSError) as e:
+            return {"error": str(e)}
+
+    def swap_llama_swap(self) -> dict:
+        """Swap staging into the live dir; previous install → backups.
+
+        Returns {backup: <name> | null} or {error}.
+        """
+        try:
+            d = self._dirs()
+            cfg = load_config()
+            label = f"v{cfg.llama_swap_installed}" if cfg.llama_swap_installed else None
+            backup = updater.atomic_swap(d["live"], d["staging"], d["backups"], label=label)
+            return {"backup": backup}
+        except (ConfigError, updater.UpdateError, OSError) as e:
+            return {"error": str(e)}
+
+    def rollback_llama_swap(self) -> dict:
+        """Restore the newest backup. Returns {rolledBack: bool} or {error}."""
+        try:
+            d = self._dirs()
+            return {"rolledBack": updater.rollback(d["live"], d["backups"])}
+        except (ConfigError, updater.UpdateError, OSError) as e:
+            return {"error": str(e)}
+
+    def list_llama_swap_backups(self) -> list:
+        """Backup dir names, newest first. [] when none (or no config)."""
+        try:
+            return updater.list_backups(self._dirs()["backups"])
+        except ConfigError:
+            return []
+
+    def probe_port(self, port: int) -> bool:
+        """True when something listens on 127.0.0.1:<port>."""
+        return updater.probe_port(port)
+
+    def stop_llama_swap(self) -> bool:
+        """Best-effort kill of a running llama-swap. True if one was killed."""
+        return updater.stop_llama_swap()
+
     # --- shape conversion -------------------------------------------------
     # UI speaks camelCase (TS), Python speaks snake_case (PEP8). One place
     # owns the mapping.
@@ -77,6 +147,7 @@ class Api:
         "cudaFamily": "cuda_family",
         "llamaCppPin": "llama_cpp_pin",
         "llamaSwapPort": "llama_swap_port",
+        "llamaSwapInstalled": "llama_swap_installed",
         "startWithSystem": "start_with_system",
         "autoStartLlamaSwap": "auto_start_llama_swap",
         "closeToTray": "close_to_tray",

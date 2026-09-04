@@ -1,5 +1,11 @@
 """Tests for the pywebview Api surface (main.py) — the camelCase boundary."""
+import hashlib
+import io
+import socket
 import sys
+import threading
+import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -66,6 +72,76 @@ class TestApi:
         assert set(d) == {"os", "arch", "suggestCuda", "cudaMajorHint", "gpuName", "backends"}
         assert isinstance(d["backends"], list)
 
+    def test_key_mapping_includes_llama_swap_installed(self):
+        api = Api()
+        snake = api._from_camel({"llamaSwapInstalled": 253})
+        assert snake["llama_swap_installed"] == 253
+        from llama_center.config import parse_config
+
+        cfg = parse_config({"version": 1, "llama_swap_installed": 253})
+        assert api._to_camel(cfg)["llamaSwapInstalled"] == 253
+
+    def test_probe_port_closed(self, home):
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        assert Api().probe_port(port) is False
+
+    def test_list_backups_empty(self, home):
+        Api().save_config({"version": 1, "installDir": str(home / "root")})
+        assert Api().list_llama_swap_backups() == []
+
+    def test_download_and_stage_error_without_config(self, home):
+        # No config file → default AppConfig with empty install_dir.
+        res = Api().download_and_stage("http://127.0.0.1/x.zip", None)
+        assert "error" in res
+        assert "install_dir" in res["error"]
+
+    def test_download_stage_swap_roundtrip(self, home):
+        """Full P1 flow through the camelCase boundary: stage → swap → rollback."""
+        root = home / "root"
+        payload = b"EXE-PAYLOAD"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("llama-swap.exe", payload)
+        archive = buf.getvalue()
+        sha = hashlib.sha256(archive).hexdigest()
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("content-length", str(len(archive)))
+                self.end_headers()
+                self.wfile.write(archive)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        port = httpd.server_address[1]
+        t = threading.Thread(target=httpd.serve_forever, daemon=True)
+        t.start()
+        try:
+            api = Api()
+            assert "path" in api.save_config({"version": 1, "installDir": str(root)})
+
+            res = api.download_and_stage(f"http://127.0.0.1:{port}/llama-swap_999_windows_amd64.zip", sha)
+            assert "staging" in res, res
+            assert Path(res["staging"]).exists()
+
+            res = api.swap_llama_swap()
+            assert "error" not in res, res
+            assert res["backup"] is None  # first install
+            assert (root / "llama-swap" / "llama-swap.exe").read_bytes() == payload
+
+            assert api.rollback_llama_swap()["rolledBack"] is False  # no backups yet
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
+class TestKeyMapping:
     def test_key_mapping_is_bidirectional(self):
         api = Api()
         camel = {

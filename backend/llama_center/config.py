@@ -37,6 +37,7 @@ class AppConfig:
     cuda_family: str = "cudart"
     llama_cpp_pin: Optional[str] = None  # e.g. "b10814"; None = latest-with-asset
     llama_swap_port: int = 8085
+    llama_swap_installed: Optional[int] = None  # e.g. 253; None = not installed yet
     lang: str = "en"
     start_with_system: bool = False
     auto_start_llama_swap: bool = False
@@ -104,6 +105,13 @@ def parse_config(raw: object) -> AppConfig:
     if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
         raise ConfigError(f"config: llama_swap_port must be a positive int, got {port!r}")
 
+    swap_installed = raw.get("llama_swap_installed")
+    if swap_installed is not None:
+        if isinstance(swap_installed, bool) or not isinstance(swap_installed, int) or swap_installed <= 0:
+            raise ConfigError(
+                f"config: llama_swap_installed must be a positive int or null, got {swap_installed!r}"
+            )
+
     install_dir = raw.get("install_dir", "")
     if not isinstance(install_dir, str):
         raise ConfigError(f"config: install_dir must be a string, got {install_dir!r}")
@@ -125,6 +133,7 @@ def parse_config(raw: object) -> AppConfig:
         cuda_family=cuda_family,
         llama_cpp_pin=pin,
         llama_swap_port=port,
+        llama_swap_installed=swap_installed,
         lang=lang,
         start_with_system=_bool("start_with_system", False),
         auto_start_llama_swap=_bool("auto_start_llama_swap", False),

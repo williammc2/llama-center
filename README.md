@@ -60,8 +60,8 @@ backend/           # Python: config, detection, shell (pytest-tested)
   llama_center/    #   package: config.py, detect.py
   main.py          #   pywebview entry point
 src/               # React UI
-  components/      #   Wizard, …
-  lib/             #   bridge.ts, config.ts, detect.ts, assetResolver.ts
+  components/      #   Wizard, Home (llama-swap install/update/rollback)
+  lib/             #   bridge.ts, config.ts, detect.ts, assetResolver.ts, llamaSwapRelease.ts
 PLAN.md            # plan + status
 tasks/todo.md      # task list
 ```
