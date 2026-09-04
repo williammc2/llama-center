@@ -37,19 +37,19 @@ describe('bridge — lazy shell resolution', () => {
             calls.push('save_config')
             return { path: 'C:\\fake\\config.json' }
           },
-          download_and_stage: async () => {
+          download_and_stage: async (_component: string, _url: string, _sha: string | null) => {
             calls.push('download_and_stage')
             return { staging: 'C:\\fake\\staging' }
           },
-          swap_llama_swap: async () => {
-            calls.push('swap_llama_swap')
+          swap_component: async (_component: string) => {
+            calls.push('swap_component')
             return { backup: null }
           },
-          rollback_llama_swap: async () => {
-            calls.push('rollback_llama_swap')
+          rollback_component: async (_component: string) => {
+            calls.push('rollback_component')
             return { rolledBack: false }
           },
-          list_llama_swap_backups: async () => {
+          list_component_backups: async (_component: string) => {
             calls.push('list_backups')
             return []
           },
@@ -71,14 +71,14 @@ describe('bridge — lazy shell resolution', () => {
     expect(path).toBe('C:\\fake\\config.json')
     expect(calls).toContain('save_config')
     expect(await bridge.getConfig()).toBeNull()
-    expect(await bridge.downloadAndStage('http://x/y.zip', null)).toBe('C:\\fake\\staging')
-    expect(await bridge.swapLlamaSwap()).toBeNull()
-    expect(await bridge.rollbackLlamaSwap()).toBe(false)
-    expect(await bridge.listLlamaSwapBackups()).toEqual([])
+    expect(await bridge.downloadAndStage('llama-swap', 'http://x/y.zip', null)).toBe('C:\\fake\\staging')
+    expect(await bridge.swapComponent('llama-swap')).toBeNull()
+    expect(await bridge.rollbackComponent('llama-cpp')).toBe(false)
+    expect(await bridge.listComponentBackups('llama-swap')).toEqual([])
     expect(await bridge.probePort(8085)).toBe(false)
     expect(await bridge.stopLlamaSwap()).toBe(false)
     expect(calls).toEqual(
-      expect.arrayContaining(['save_config', 'download_and_stage', 'swap_llama_swap', 'list_backups', 'probe_port']),
+      expect.arrayContaining(['save_config', 'download_and_stage', 'swap_component', 'list_backups', 'probe_port']),
     )
   })
 

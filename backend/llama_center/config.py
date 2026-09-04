@@ -36,6 +36,7 @@ class AppConfig:
     cuda_major: Optional[int] = None  # 12 | 13, only when backend == "cuda"
     cuda_family: str = "cudart"
     llama_cpp_pin: Optional[str] = None  # e.g. "b10814"; None = latest-with-asset
+    llama_cpp_installed: Optional[str] = None  # e.g. "b10816"; None = not installed yet
     llama_swap_port: int = 8085
     llama_swap_installed: Optional[int] = None  # e.g. 253; None = not installed yet
     lang: str = "en"
@@ -135,6 +136,10 @@ def parse_config(raw: object) -> AppConfig:
     if pin is not None and not isinstance(pin, str):
         raise ConfigError(f"config: llama_cpp_pin must be a string or null, got {pin!r}")
 
+    cpp_installed = raw.get("llama_cpp_installed")
+    if cpp_installed is not None and not isinstance(cpp_installed, str):
+        raise ConfigError(f"config: llama_cpp_installed must be a string or null, got {cpp_installed!r}")
+
     def _bool(key: str, dflt: bool) -> bool:
         v = raw.get(key)
         return dflt if v is None else bool(v)
@@ -147,6 +152,7 @@ def parse_config(raw: object) -> AppConfig:
         cuda_major=cuda_major,
         cuda_family=cuda_family,
         llama_cpp_pin=pin,
+        llama_cpp_installed=cpp_installed,
         llama_swap_port=port,
         llama_swap_installed=swap_installed,
         lang=lang,

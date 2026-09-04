@@ -12,13 +12,13 @@ Status: P0 done. Owner: @architect (plan) / @builder (code).
 | P0 wizard + config + resolver | ✅ DONE | React 19 + Tailwind 4, 46 tests green, user verified wizard in browser |
 | Stack switch to pywebview/Python | ✅ DONE | `6aff54c`; deps installed (pywebview, pystray, pyinstaller 6.22.2) |
 | P1 llama-swap install/update | ✅ DONE + USER-VERIFIED | bridge+shell (`3d807b7`); release client TS (`llamaSwapRelease.ts`, real v253 fixtures + mock server); updater.py (download→sha256→staging→swap, keep 2 backups, rollback, port probe, stop-by-name); Home UI with update/rollback/conflict dialog. vitest 66 + pytest 61 green. Verified in native window: real v253 install to `%LOCALAPPDATA%\llama-center`, port-conflict dialog worked |
-| P2 llama.cpp install | 🔜 NEXT | resolver done (27 tests); discovery+install pending |
+| P2 llama.cpp install | ✅ DONE | `llamaCppNightly.ts` (releases-list walk newest→oldest, real b10816/b10814 fixtures, hardMajor from wizard choice); updater generalized per-component (`staging-<component>`, backup prefix); Home llama.cpp card (check/install/update/rollback, size shown). vitest 76 + pytest 63 green |
 | P3 run/logs/status | ⏳ | needs Python bridge (spawn, pipes) |
 | P4 config editor | ⏳ | |
 | P5 settings/tray/autostart | ⏳ | |
 | P6 packaging | ⏳ | PyInstaller onedir |
 
-**Next goal:** P2 — llama.cpp nightly discovery (walk `b####` newest→oldest via `resolveLatest`) + install/rollback reusing the same atomic updater.
+**Next goal:** P3 — start/stop llama-swap (spawn, piped stdio, terminal view), status panel via API polling, no orphans on exit.
 
 ## 1. Stack (decided)
 

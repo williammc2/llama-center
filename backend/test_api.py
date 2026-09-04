@@ -90,11 +90,12 @@ class TestApi:
 
     def test_list_backups_empty(self, home):
         Api().save_config({"version": 1, "installDir": str(home / "root")})
-        assert Api().list_llama_swap_backups() == []
+        assert Api().list_component_backups("llama-swap") == []
+        assert Api().list_component_backups("llama-cpp") == []
 
     def test_download_and_stage_error_without_config(self, home):
         # No config file → default AppConfig with empty install_dir.
-        res = Api().download_and_stage("http://127.0.0.1/x.zip", None)
+        res = Api().download_and_stage("llama-swap", "http://127.0.0.1/x.zip", None)
         assert "error" in res
         assert "install_dir" in res["error"]
 
@@ -126,16 +127,16 @@ class TestApi:
             api = Api()
             assert "path" in api.save_config({"version": 1, "installDir": str(root)})
 
-            res = api.download_and_stage(f"http://127.0.0.1:{port}/llama-swap_999_windows_amd64.zip", sha)
+            res = api.download_and_stage("llama-swap", f"http://127.0.0.1:{port}/llama-swap_999_windows_amd64.zip", sha)
             assert "staging" in res, res
             assert Path(res["staging"]).exists()
 
-            res = api.swap_llama_swap()
+            res = api.swap_component("llama-swap")
             assert "error" not in res, res
             assert res["backup"] is None  # first install
             assert (root / "llama-swap" / "llama-swap.exe").read_bytes() == payload
 
-            assert api.rollback_llama_swap()["rolledBack"] is False  # no backups yet
+            assert api.rollback_component("llama-swap")["rolledBack"] is False  # no backups yet
         finally:
             httpd.shutdown()
             httpd.server_close()

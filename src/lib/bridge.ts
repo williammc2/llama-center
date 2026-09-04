@@ -18,16 +18,16 @@ export interface Bridge {
   saveConfig(cfg: AppConfig): Promise<string>
   /** Host detection: OS, arch, CUDA hint, offered backends. */
   getDetection(): Promise<Detection>
-  /** Download a llama-swap release asset, verify SHA-256, extract to staging.
-   *  Returns the directory holding the payload. */
-  downloadAndStage(url: string, sha256: string | null): Promise<string>
-  /** Swap staging into the live llama-swap dir (previous install → backups).
+  /** Download a release asset for a component ("llama-swap" | "llama-cpp"),
+   *  verify SHA-256, extract to staging. Returns the payload directory. */
+  downloadAndStage(component: string, url: string, sha256: string | null): Promise<string>
+  /** Swap staging into the component's live dir (previous install → backups).
    *  Returns the backup dir name, or null on a first install. */
-  swapLlamaSwap(): Promise<string | null>
-  /** Restore the newest backup. False when there is nothing to restore. */
-  rollbackLlamaSwap(): Promise<boolean>
-  /** Backup dir names, newest first. */
-  listLlamaSwapBackups(): Promise<string[]>
+  swapComponent(component: string): Promise<string | null>
+  /** Restore the component's newest backup. False when nothing to restore. */
+  rollbackComponent(component: string): Promise<boolean>
+  /** The component's backup dir names, newest first. */
+  listComponentBackups(component: string): Promise<string[]>
   /** True when something listens on 127.0.0.1:<port>. */
   probePort(port: number): Promise<boolean>
   /** Best-effort kill of a running llama-swap. True when a process was killed. */
@@ -39,10 +39,10 @@ interface PywebviewApi {
   get_detection(): Promise<Detection>
   get_config(): Promise<Record<string, unknown> | null | { error: string }>
   save_config(raw: Record<string, unknown>): Promise<{ path?: string; error?: string }>
-  download_and_stage(url: string, sha256: string | null): Promise<{ staging?: string; error?: string }>
-  swap_llama_swap(): Promise<{ backup?: string | null; error?: string }>
-  rollback_llama_swap(): Promise<{ rolledBack?: boolean; error?: string }>
-  list_llama_swap_backups(): Promise<string[]>
+  download_and_stage(component: string, url: string, sha256: string | null): Promise<{ staging?: string; error?: string }>
+  swap_component(component: string): Promise<{ backup?: string | null; error?: string }>
+  rollback_component(component: string): Promise<{ rolledBack?: boolean; error?: string }>
+  list_component_backups(component: string): Promise<string[]>
   probe_port(port: number): Promise<boolean>
   stop_llama_swap(): Promise<boolean>
 }
@@ -72,23 +72,23 @@ const pywebview: Bridge = {
     if (res.error) throw new Error(res.error)
     return res.path!
   },
-  async downloadAndStage(url, sha256) {
-    const res = await window.pywebview!.api.download_and_stage(url, sha256)
+  async downloadAndStage(component, url, sha256) {
+    const res = await window.pywebview!.api.download_and_stage(component, url, sha256)
     if (res.error) throw new Error(res.error)
     return res.staging!
   },
-  async swapLlamaSwap() {
-    const res = await window.pywebview!.api.swap_llama_swap()
+  async swapComponent(component) {
+    const res = await window.pywebview!.api.swap_component(component)
     if (res.error) throw new Error(res.error)
     return res.backup ?? null
   },
-  async rollbackLlamaSwap() {
-    const res = await window.pywebview!.api.rollback_llama_swap()
+  async rollbackComponent(component) {
+    const res = await window.pywebview!.api.rollback_component(component)
     if (res.error) throw new Error(res.error)
     return res.rolledBack === true
   },
-  async listLlamaSwapBackups() {
-    return window.pywebview!.api.list_llama_swap_backups()
+  async listComponentBackups(component) {
+    return window.pywebview!.api.list_component_backups(component)
   },
   async probePort(port) {
     return window.pywebview!.api.probe_port(port)
@@ -126,13 +126,13 @@ const browser: Bridge = {
   async downloadAndStage() {
     throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
   },
-  async swapLlamaSwap() {
+  async swapComponent() {
     throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
   },
-  async rollbackLlamaSwap() {
+  async rollbackComponent() {
     throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
   },
-  async listLlamaSwapBackups() {
+  async listComponentBackups() {
     return []
   },
   async probePort() {
