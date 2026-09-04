@@ -42,7 +42,7 @@ export interface ParsedAsset {
 export interface ResolveRequest {
   os: 'win' | 'linux' | 'macos'
   arch: 'x64' | 'arm64'
-  backend: 'cpu' | 'cuda' | 'vulkan' | 'rocm' | 'openvino' | 'sycl'
+  backend: 'cpu' | 'cuda' | 'vulkan' | 'rocm' | 'openvino' | 'sycl' | 'opencl'
   /** CUDA major to prefer (12 or 13). Omit to accept whatever is present. */
   cudaMajor?: number
   /** CUDA family; defaults to `cudart` (self-contained, no toolkit required). */
@@ -222,7 +222,7 @@ export function resolve(assets: ParsedAsset[], req: ResolveRequest): ResolveResu
         reason: `cuda-${want}.* not available in ${fam} family for ${os}-${req.arch}; using ${otherFam[0]?.family ?? 'other'} family (hardMajor)`,
       })
     }
-    const present = [...new Set(sameFam.map((a) => a.cudaMajor))].sort((a, b) => b - a)
+    const present = [...new Set(sameFam.map((a) => a.cudaMajor).filter((m): m is number => m != null))].sort((a, b) => b - a)
     tiers.push({
       pool: sameFam,
       fellBack: true,
