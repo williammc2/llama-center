@@ -21,6 +21,7 @@ P1 surface (install/update, per component — "llama-swap" | "llama-cpp"):
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -94,6 +95,16 @@ class Api:
             return cfg.llama_cpp_installed
         return None
 
+    def _push_progress(self, payload: dict) -> None:
+        """Push a download-progress event to the UI (cosmetic — never raises)."""
+        try:
+            if webview.windows:
+                webview.windows[0].evaluate_js(
+                    f"window.__lcProgress && window.__lcProgress({json.dumps(payload)})"
+                )
+        except Exception:
+            pass
+
     def download_and_stage(
         self, component: str, url: str, sha256: str | None = None, into: str | None = None
     ) -> dict:
@@ -107,7 +118,13 @@ class Api:
             d = self._dirs(component)
             name = url.rsplit("/", 1)[-1].split("?")[0] or component
             archive = d["downloads"] / name
-            updater.download(url, archive, sha256)
+
+            def _on_progress(received: int, total: int | None) -> None:
+                self._push_progress(
+                    {"component": component, "file": name, "received": received, "total": total}
+                )
+
+            updater.download(url, archive, sha256, progress=_on_progress)
             if into:
                 content = updater.extract(archive, Path(into), merge=True)
             else:

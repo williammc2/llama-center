@@ -77,6 +77,15 @@ describe('bridge — lazy shell resolution', () => {
     expect(await bridge.listComponentBackups('llama-swap')).toEqual([])
     expect(await bridge.probePort(8085)).toBe(false)
     expect(await bridge.stopLlamaSwap()).toBe(false)
+
+    // progress pushes: Python calls window.__lcProgress, which is our callback
+    const off = await bridge.onDownloadProgress((p) => calls.push(`progress:${p.received}`))
+    const w = g.window as { __lcProgress?: (p: { received: number }) => void }
+    expect(typeof w.__lcProgress).toBe('function')
+    w.__lcProgress!({ received: 5 })
+    expect(calls).toContain('progress:5')
+    off()
+    expect(w.__lcProgress).toBeUndefined()
     expect(calls).toEqual(
       expect.arrayContaining(['save_config', 'download_and_stage', 'swap_component', 'list_backups', 'probe_port']),
     )

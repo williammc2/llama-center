@@ -54,11 +54,21 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def download(url: str, dest: Path, expected_sha256: str | None = None, timeout: float = 60.0) -> Path:
+def download(
+    url: str,
+    dest: Path,
+    expected_sha256: str | None = None,
+    timeout: float = 60.0,
+    progress: "callable | None" = None,
+) -> Path:
     """Stream `url` to `dest` (via a .part file), verify SHA-256, rename into place.
 
     Raises UpdateError on HTTP failure or checksum mismatch (the .part file is
     removed either way, so a retry never sees a half-written archive).
+
+    `progress(received_bytes, total_bytes_or_None)` is called at most ~4x/s
+    (and once on completion) — total is null when the server sends no
+    Content-Length.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
@@ -66,9 +76,19 @@ def download(url: str, dest: Path, expected_sha256: str | None = None, timeout: 
         with requests.get(url, stream=True, timeout=timeout) as r:
             if r.status_code != 200:
                 raise UpdateError(f"download: HTTP {r.status_code} for {url}")
+            clen = r.headers.get("content-length")
+            total = int(clen) if clen and clen.isdigit() else None
+            received = 0
+            last_report = 0.0
             with open(part, "wb") as f:
                 for chunk in r.iter_content(chunk_size=CHUNK):
                     f.write(chunk)
+                    received += len(chunk)
+                    if progress is not None:
+                        now = time.monotonic()
+                        if received == total or now - last_report >= 0.25:
+                            progress(received, total)
+                            last_report = now
     except requests.RequestException as e:
         part.unlink(missing_ok=True)
         raise UpdateError(f"download: {e}") from e

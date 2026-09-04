@@ -11,6 +11,14 @@
 import { parseConfig, serializeConfig, type AppConfig } from './config'
 import type { Detection } from './detect'
 
+/** Download progress pushed from Python (throttled ~4x/s per file). */
+export interface DownloadProgress {
+  component: string
+  file: string
+  received: number
+  total: number | null
+}
+
 export interface Bridge {
   /** Current config on disk, or null (first run). */
   getConfig(): Promise<AppConfig | null>
@@ -34,6 +42,8 @@ export interface Bridge {
   probePort(port: number): Promise<boolean>
   /** Best-effort kill of a running llama-swap. True when a process was killed. */
   stopLlamaSwap(): Promise<boolean>
+  /** Subscribe to download progress pushes. Returns an unsubscribe function. */
+  onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
 
 /* pywebview exposes the Python Api object here. */
@@ -57,6 +67,8 @@ interface PywebviewApi {
 declare global {
   interface Window {
     pywebview?: { api: PywebviewApi }
+    /** Set by the pywebview bridge; Python pushes download progress here. */
+    __lcProgress?: (p: DownloadProgress) => void
   }
 }
 
@@ -103,6 +115,12 @@ const pywebview: Bridge = {
   async stopLlamaSwap() {
     return window.pywebview!.api.stop_llama_swap()
   },
+  async onDownloadProgress(cb) {
+    window.__lcProgress = cb
+    return () => {
+      delete window.__lcProgress
+    }
+  },
 }
 
 /**
@@ -147,6 +165,9 @@ const browser: Bridge = {
   },
   async stopLlamaSwap() {
     return false
+  },
+  async onDownloadProgress() {
+    return () => {}
   },
 }
 

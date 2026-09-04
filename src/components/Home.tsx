@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { bridge } from '../lib/bridge'
+import { bridge, type DownloadProgress } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
 import { fetchLatestRelease, pickAsset, type SwapRelease } from '../lib/llamaSwapRelease'
@@ -31,6 +31,7 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
   const [cpp, setCpp] = useState<NightlyCheck | null>(null)
   const [cppPhase, setCppPhase] = useState<Phase>({ status: 'idle' })
   const [cppBackups, setCppBackups] = useState<string[]>([])
+  const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [busy, setBusy] = useState(false)
 
   const installed = cfg.llamaSwapInstalled
@@ -79,6 +80,16 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
       void checkCpp()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    let off: (() => void) | undefined
+    void bridge.onDownloadProgress(setProgress).then((u) => {
+      off = u
+    })
+    return () => {
+      off?.()
+    }
   }, [])
 
   // --- llama-swap flow ------------------------------------------------------
@@ -321,6 +332,7 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
 
         {upToDate && latest && <p className="mt-3 text-xs text-emerald-600">Up to date (v{installed}).</p>}
         {phaseLine && <p className="mt-3 text-xs text-neutral-400">{phaseLine}</p>}
+        {progress?.component === 'llama-swap' && phase.status === 'downloading' && <Progress p={progress} />}
         {phase.status === 'done' && <p className="mt-3 text-xs text-emerald-600">{phase.message}</p>}
         {phase.status === 'error' && (
           <p role="alert" className="mt-3 text-xs text-red-400">
@@ -412,6 +424,7 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
           </p>
         )}
         {cppPhaseLine && <p className="mt-3 text-xs text-neutral-400">{cppPhaseLine}</p>}
+        {progress?.component === 'llama-cpp' && cppPhase.status === 'downloading' && <Progress p={progress} />}
         {cppPhase.status === 'done' && <p className="mt-3 text-xs text-emerald-600">{cppPhase.message}</p>}
         {cppPhase.status === 'error' && (
           <p role="alert" className="mt-3 text-xs text-red-400">
@@ -453,6 +466,28 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+const mb = (n: number) => `${Math.round(n / (1024 * 1024))} MB`
+
+/** Download progress bar — % when the server sent Content-Length, else
+ *  an indeterminate (pulsing) bar with the byte count. */
+function Progress({ p }: { p: DownloadProgress }) {
+  const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : null
+  return (
+    <div className="mt-3">
+      <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
+        <div
+          className={'h-full bg-sky-500 ' + (pct === null ? 'animate-pulse' : 'transition-[width] duration-200')}
+          style={{ width: pct !== null ? `${pct}%` : '100%' }}
+        />
+      </div>
+      <p className="mt-1 text-xs text-neutral-400">
+        {mb(p.received)}
+        {p.total ? ` / ${mb(p.total)} (${pct}%)` : ''}
+      </p>
     </div>
   )
 }
