@@ -23,11 +23,12 @@
 - [x] Nightly discovery: highest `b####` with matching `{os}-{backend}` asset (calls resolver) — `src/lib/llamaCppNightly.ts`, real b10816/b10814 fixtures + mock server
 - [x] Install/update/rollback (same atomic flow as P1) — updater.py generalized per component; Home llama.cpp card; `llamaCppInstalled` in config
 
-## P3 — Run + logs + status (owner: @builder)
-- [ ] Spawn llama-swap (piped stdio, CREATE_NO_WINDOW on win)
-- [ ] Terminal log view (ring buffer) + rotating files
-- [ ] Status panel via API polling (2s)
-- [ ] No orphan process on app exit
+## P3 — Run + logs + status (owner: @builder) ✅ DONE
+- [x] Spawn llama-swap (piped stdio, CREATE_NO_WINDOW on win) — `backend/llama_center/process.py`, tested with a stand-in command
+- [x] Terminal log view (ring buffer 2000) + rotating files (5 MB × 3, `logs/llama-swap.log`)
+- [x] Status panel via API polling (2s) — `/health` + `/running` (model list), managed vs external detection
+- [x] No orphan process on app exit — atexit hook stops the managed process
+- [x] UI: Start/Stop buttons, log terminal, start conflict dialog (Stop & start / Adopt / Cancel), exit code surfaced on Stop
 
 ## P4 — Config editor (owner: @builder)
 - [ ] `llama-swap.json` editor: validation, field errors, apply/reload

@@ -43,6 +43,7 @@ def component_dirs(install_dir: str, component: str = "llama-swap") -> dict[str,
         "downloads": root / "downloads",
         "staging": root / "downloads" / f"staging-{component}",
         "backups": root / "backups" / component,
+        "logs": root / "logs",
     }
 
 

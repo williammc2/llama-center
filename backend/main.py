@@ -17,13 +17,20 @@ P1 surface (install/update, per component — "llama-swap" | "llama-cpp"):
   - rollback_component(component) → {rolledBack} | {error}
   - list_component_backups(component) → [names, newest first]
   - probe_port(port) → bool
-  - stop_llama_swap() → bool
+
+P3 surface (run llama-swap):
+  - start_llama_swap() → {pid} | {error}
+  - stop_llama_swap() → {stopped, exitCode} (managed first, then by name)
+  - llama_swap_status() → {managed, pid, portBusy, healthy, models}
+  - llama_swap_logs(n) → [lines, newest last]
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import sys
+import urllib.request
 from pathlib import Path
 
 # Make `llama_center` importable regardless of CWD.
@@ -39,8 +46,20 @@ from llama_center.config import (  # noqa: E402
     parse_config,
     save_config,
 )
+from llama_center import process as proc  # noqa: E402
 from llama_center import updater  # noqa: E402
 from llama_center.detect import detect  # noqa: E402
+
+# The single managed llama-swap process (module-level: one per app run).
+_managed: proc.LlamaSwapProcess | None = None
+
+
+def shutdown_managed() -> None:
+    """atexit hook — no orphan process on a graceful app exit."""
+    global _managed
+    if _managed is not None and _managed.running:
+        _managed.stop(timeout=5)
+        _managed.flush()
 
 
 class Api:
@@ -166,9 +185,91 @@ class Api:
         """True when something listens on 127.0.0.1:<port>."""
         return updater.probe_port(port)
 
-    def stop_llama_swap(self) -> bool:
-        """Best-effort kill of a running llama-swap. True if one was killed."""
-        return updater.stop_llama_swap()
+    # --- P3: run llama-swap --------------------------------------------------
+
+    def _exe(self, d: dict) -> Path | None:
+        name = "llama-swap.exe" if os.name == "nt" else "llama-swap"
+        p = d["live"] / name
+        return p if p.exists() else None
+
+    def start_llama_swap(self) -> dict:
+        """Spawn the installed llama-swap. {pid} | {error}.
+
+        `error` is "port-in-use" (UI shows the conflict dialog),
+        "not-installed", or a spawn failure message.
+        """
+        global _managed
+        try:
+            d = self._dirs("llama-swap")
+            cfg = load_config()
+        except ConfigError as e:
+            return {"error": str(e)}
+        exe = self._exe(d)
+        if exe is None:
+            return {"error": "not-installed"}
+        if _managed is not None and _managed.running:
+            return {"error": "already-running"}
+        if updater.probe_port(cfg.llama_swap_port):
+            return {"error": "port-in-use", "port": cfg.llama_swap_port}
+        cmd = [str(exe), "--listen", f"localhost:{cfg.llama_swap_port}"]
+        for name in ("llama-swap.json", "llama-swap.yaml"):
+            c = d["live"] / name
+            if c.exists():
+                cmd += ["--config", str(c)]
+                break
+        try:
+            _managed = proc.LlamaSwapProcess(cmd, d["live"], d["logs"])
+            pid = _managed.start()
+            return {"pid": pid}
+        except proc.ProcessError as e:
+            return {"error": str(e)}
+
+    def stop_llama_swap(self) -> dict:
+        """Stop a running llama-swap: the managed one first, else by image
+        name (an adopted process). {stopped: bool, exitCode: int|null}."""
+        global _managed
+        if _managed is not None and _managed.running:
+            code = _managed.stop()
+            _managed.flush()
+            return {"stopped": True, "exitCode": code}
+        return {"stopped": updater.stop_llama_swap(), "exitCode": None}
+
+    def llama_swap_status(self) -> dict:
+        """Structured status for the UI (polled ~2s): managed state, port,
+        /health, and the /running model list."""
+        try:
+            cfg = load_config()
+        except ConfigError:
+            cfg = None
+        port = cfg.llama_swap_port if cfg else 8085
+        managed = _managed is not None and _managed.running
+        port_busy = updater.probe_port(port)
+        healthy = updater.health_ok(port) if port_busy else False
+        models: list[dict] = []
+        if healthy:
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/running", timeout=2
+                ) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+                for m in data.get("running", []) if isinstance(data, dict) else []:
+                    if isinstance(m, dict) and isinstance(m.get("model"), str):
+                        models.append({"model": m["model"], "state": m.get("state", "")})
+            except Exception:
+                pass
+        return {
+            "managed": managed,
+            "pid": _managed.pid if managed else None,
+            "portBusy": port_busy,
+            "healthy": healthy,
+            "models": models,
+        }
+
+    def llama_swap_logs(self, n: int = 200) -> list:
+        """Last `n` lines of the managed process (newest last). [] when none."""
+        if _managed is not None:
+            return _managed.lines(n)
+        return []
 
     # --- shape conversion -------------------------------------------------
     # UI speaks camelCase (TS), Python speaks snake_case (PEP8). One place
@@ -205,6 +306,8 @@ def main() -> int:
     if not dist.exists():
         print(f"UI not built — run `pnpm build` first (expected {dist}).", file=sys.stderr)
         return 1
+
+    atexit.register(shutdown_managed)
 
     api = Api()
     window = webview.create_window(
