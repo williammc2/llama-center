@@ -3,7 +3,22 @@
 A cross-platform (Windows + Linux) desktop app that installs, configures, runs, and keeps
 up-to-date **llama.cpp** (nightlies) and **llama-swap** for local LLM inference.
 
-Status: P0 in progress. Owner: @architect (plan) / @builder (code).
+Status: P0 done. Owner: @architect (plan) / @builder (code).
+
+## 0. Status (keep this updated — what's done vs. what's next)
+
+| Phase | State | Notes |
+|---|---|---|
+| P0 wizard + config + resolver | ✅ DONE | React 19 + Tailwind 4, 46 tests green, user verified wizard in browser |
+| Stack switch to pywebview/Python | ✅ DONE | `6aff54c`; deps installed (pywebview, pystray, pyinstaller 6.22.2) |
+| P1 llama-swap install/update | 🔜 NEXT | TS logic now; Python bridge when shell lands |
+| P2 llama.cpp install | ⏳ | resolver done (27 tests); discovery+install pending |
+| P3 run/logs/status | ⏳ | needs Python bridge (spawn, pipes) |
+| P4 config editor | ⏳ | |
+| P5 settings/tray/autostart | ⏳ | |
+| P6 packaging | ⏳ | PyInstaller onedir |
+
+**Next goal:** P1 — llama-swap update check + install flow (TS logic, tested; Python bridge stubs the fs).
 
 ## 1. Stack (decided)
 

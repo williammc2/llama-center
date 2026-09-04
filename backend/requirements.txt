@@ -1,0 +1,6 @@
+# llama-center backend (Python 3.11)
+pywebview>=5.0
+pystray>=0.19
+pyinstaller>=6.10
+requests>=2.31
+pytest>=8.0
