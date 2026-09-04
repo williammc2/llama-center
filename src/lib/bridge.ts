@@ -84,6 +84,8 @@ export interface Bridge {
   getLlamaSwapConfig(): Promise<{ models: SwapModelDef[]; path: string | null }>
   /** Parse an existing config file (e.g. an old config.yaml) into model defs. */
   importLlamaSwapConfig(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
+  /** Open a URL in the default browser. */
+  openUrl(url: string): Promise<{ opened?: boolean; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -110,6 +112,7 @@ interface PywebviewApi {
   save_llama_swap_config(models: SwapModelDef[]): Promise<{ path?: string; error?: string }>
   get_llama_swap_config(): Promise<{ models: SwapModelDef[]; path: string | null }>
   import_llama_swap_config(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
+  open_url(url: string): Promise<{ opened?: boolean; error?: string }>
 }
 
 declare global {
@@ -182,6 +185,9 @@ const pywebview: Bridge = {
   async importLlamaSwapConfig(path) {
     return window.pywebview!.api.import_llama_swap_config(path)
   },
+  async openUrl(url) {
+    return window.pywebview!.api.open_url(url)
+  },
   async onDownloadProgress(cb) {
     window.__lcProgress = cb
     return () => {
@@ -250,6 +256,10 @@ const browser: Bridge = {
   },
   async importLlamaSwapConfig() {
     return { error: 'needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)' }
+  },
+  async openUrl(url) {
+    window.open(url, '_blank')
+    return { opened: true }
   },
   async onDownloadProgress() {
     return () => {}

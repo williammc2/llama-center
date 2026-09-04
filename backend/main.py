@@ -34,6 +34,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import subprocess
 import sys
 import urllib.request
 from dataclasses import asdict
@@ -359,6 +360,21 @@ class Api:
         except Exception:
             return {"models": [], "path": str(p)}
         return {"models": self._models_to_camel(models), "path": str(p)}
+
+    def open_url(self, url: str) -> dict:
+        """Open a URL in the default browser (the server dashboard link)."""
+        try:
+            if os.name == "nt":
+                os.startfile(url)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(
+                    ["xdg-open", url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            return {"opened": True}
+        except Exception as e:
+            return {"error": str(e)}
 
     def import_llama_swap_config(self, path: str) -> dict:
         """Parse an existing llama-swap config file (e.g. an old config.yaml)
