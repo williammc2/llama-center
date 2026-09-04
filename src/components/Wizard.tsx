@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { Backend } from '../lib/assetResolver'
 import { resolve } from '../lib/assetResolver'
+import { bridge } from '../lib/bridge'
 import type { AppConfig, Lang } from '../lib/config'
-import { DEFAULT_CONFIG, serializeConfig } from '../lib/config'
+import { DEFAULT_CONFIG } from '../lib/config'
 import type { Detection } from '../lib/detect'
 
 interface WizardProps {
@@ -34,11 +35,12 @@ export function Wizard({ detection, onSaved }: WizardProps) {
   const [port, setPort] = useState(DEFAULT_CONFIG.llamaSwapPort)
   const [lang, setLang] = useState<Lang>('en')
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const os = detection.os
   const arch = detection.arch
 
-  const finish = () => {
+  const finish = async () => {
     if (!installDir.trim()) {
       setError('Install directory is required.')
       return
@@ -57,9 +59,17 @@ export function Wizard({ detection, onSaved }: WizardProps) {
       llamaSwapPort: port,
       lang,
     }
-    // Browser stand-in for the Tauri fs write (P6 wires the real path).
-    localStorage.setItem('llama-center:config', serializeConfig(cfg))
-    onSaved(cfg)
+    setSaving(true)
+    setError(null)
+    try {
+      // Bridge picks the real implementation: pywebview (fs write) or
+      // browser (localStorage) — the wizard doesn't care which.
+      await bridge.saveConfig(cfg)
+      onSaved(cfg)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save config')
+      setSaving(false)
+    }
   }
 
   const detectedLine = useMemo(() => {
@@ -174,9 +184,10 @@ export function Wizard({ detection, onSaved }: WizardProps) {
         <button
           type="button"
           onClick={finish}
-          className="rounded-md bg-sky-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500"
+          disabled={saving}
+          className="rounded-md bg-sky-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-wait disabled:opacity-60"
         >
-          Save &amp; continue
+          {saving ? 'Saving…' : 'Save & continue'}
         </button>
       </div>
     </div>

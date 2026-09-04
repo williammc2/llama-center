@@ -11,6 +11,10 @@ describe('detectOs', () => {
   it('macos', () => {
     expect(detectOs('MacIntel', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe('macos')
   })
+  it('macos: Darwin platform must not match the win substring', () => {
+    // 'darwin'.includes('win') === true — ordering regression guard.
+    expect(detectOs('Darwin', 'Mozilla/5.0 (Macintosh; Intel Mac OS X)')).toBe('macos')
+  })
   it('unknown', () => {
     expect(detectOs('', '')).toBe('unknown')
   })
