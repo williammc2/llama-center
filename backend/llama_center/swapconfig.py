@@ -64,7 +64,9 @@ def build_cmd(m: SwapModel, llama_server: str) -> str:
     parts += ["--ctx-size", str(m.ctx_size), "--gpu-layers", str(m.gpu_layers)]
     if m.threads:
         parts += ["--threads", str(m.threads)]
-    extra = m.extra_flags.strip()
+    # Collapse newlines/multi-spaces: shlex treats them as plain whitespace,
+    # but a single-line cmd keeps the generated YAML readable.
+    extra = re.sub(r"\s+", " ", m.extra_flags).strip()
     if extra:
         parts.append(extra)
     return " ".join(parts)
