@@ -96,6 +96,17 @@ class TestBuildCmd:
         m = swc.SwapModel(name="m", model="D:\\m.gguf", extra_flags="  --jinja  ")
         assert swc.build_cmd(m, SERVER).endswith("--jinja")
 
+    def test_extra_flags_newlines_collapsed(self):
+        """Newlines (e.g. pasted from a multi-line textarea) become single spaces."""
+        m = swc.SwapModel(
+            name="m",
+            model="D:\\m.gguf",
+            extra_flags="--flash-attn on\n--spec-type draft-mtp\n  --temp 0.7",
+        )
+        cmd = swc.build_cmd(m, SERVER)
+        assert "\n" not in cmd
+        assert cmd.endswith("--flash-attn on --spec-type draft-mtp --temp 0.7")
+
 
 class TestRenderParse:
     def test_roundtrip(self):
