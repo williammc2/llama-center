@@ -23,6 +23,11 @@ P3 surface (run llama-swap):
   - stop_llama_swap() → {stopped, exitCode} (managed first, then by name)
   - llama_swap_status() → {managed, pid, portBusy, healthy, models}
   - llama_swap_logs(n) → [lines, newest last]
+
+P4 surface (llama-swap config / models):
+  - save_llama_swap_config(models) → {path} | {error}
+  - get_llama_swap_config() → {models, path}
+  - import_llama_swap_config(path) → {models} | {error}
 """
 from __future__ import annotations
 
@@ -31,6 +36,7 @@ import json
 import os
 import sys
 import urllib.request
+from dataclasses import asdict
 from pathlib import Path
 
 # Make `llama_center` importable regardless of CWD.
@@ -47,6 +53,7 @@ from llama_center.config import (  # noqa: E402
     save_config,
 )
 from llama_center import process as proc  # noqa: E402
+from llama_center import swapconfig as swc  # noqa: E402
 from llama_center import updater  # noqa: E402
 from llama_center.detect import detect  # noqa: E402
 
@@ -211,12 +218,13 @@ class Api:
             return {"error": "already-running"}
         if updater.probe_port(cfg.llama_swap_port):
             return {"error": "port-in-use", "port": cfg.llama_swap_port}
-        cmd = [str(exe), "--listen", f"localhost:{cfg.llama_swap_port}"]
-        for name in ("llama-swap.json", "llama-swap.yaml"):
-            c = d["live"] / name
-            if c.exists():
-                cmd += ["--config", str(c)]
-                break
+        config_file = next(
+            (d["live"] / n for n in ("llama-swap.json", swc.CONFIG_NAME) if (d["live"] / n).exists()),
+            None,
+        )
+        if config_file is None:
+            return {"error": "no-config"}
+        cmd = [str(exe), "--listen", f"localhost:{cfg.llama_swap_port}", "--config", str(config_file)]
         try:
             _managed = proc.LlamaSwapProcess(cmd, d["live"], d["logs"])
             pid = _managed.start()
@@ -270,6 +278,101 @@ class Api:
         if _managed is not None:
             return _managed.lines(n)
         return []
+
+    # --- P4: llama-swap config (models) ----------------------------------
+
+    def _llama_server_path(self, install_dir: str) -> Path:
+        return updater.component_dirs(install_dir, "llama-cpp")["live"] / (
+            "llama-server.exe" if os.name == "nt" else "llama-server"
+        )
+
+    @staticmethod
+    def _models_from_camel(raw: list) -> list:
+        out = []
+        for r in raw or []:
+            if not isinstance(r, dict):
+                continue
+            out.append(
+                swc.SwapModel(
+                    name=str(r.get("name", "")),
+                    model=str(r.get("model", "")),
+                    mmproj=r.get("mmproj") or None,
+                    draft=r.get("draft") or None,
+                    ctx_size=int(r.get("ctxSize") or swc.DEFAULT_CTX),
+                    gpu_layers=int(r.get("gpuLayers") or swc.DEFAULT_GPU_LAYERS),
+                    threads=(int(r["threads"]) if r.get("threads") else None),
+                    extra_flags=str(r.get("extraFlags", "")),
+                )
+            )
+        return out
+
+    @staticmethod
+    def _models_to_camel(models: list) -> list:
+        out = []
+        for m in models:
+            d = asdict(m)
+            out.append(
+                {
+                    "name": d["name"],
+                    "model": d["model"],
+                    "mmproj": d["mmproj"],
+                    "draft": d["draft"],
+                    "ctxSize": d["ctx_size"],
+                    "gpuLayers": d["gpu_layers"],
+                    "threads": d["threads"],
+                    "extraFlags": d["extra_flags"],
+                }
+            )
+        return out
+
+    def save_llama_swap_config(self, models: list) -> dict:
+        """Render model defs to `llama-swap.yaml` in the llama-swap dir.
+        {path} | {error}."""
+        try:
+            d = self._dirs("llama-swap")
+            cfg = load_config()
+        except ConfigError as e:
+            return {"error": str(e)}
+        server = self._llama_server_path(cfg.install_dir)
+        if not server.exists():
+            return {"error": "llama-cpp-not-installed"}
+        try:
+            text = swc.render_yaml(self._models_from_camel(models), str(server))
+        except swc.SwapConfigError as e:
+            return {"error": str(e)}
+        p = d["live"] / swc.CONFIG_NAME
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        return {"path": str(p)}
+
+    def get_llama_swap_config(self) -> dict:
+        """Read the managed config back into model defs (UI prefill)."""
+        try:
+            d = self._dirs("llama-swap")
+        except ConfigError:
+            return {"models": [], "path": None}
+        p = d["live"] / swc.CONFIG_NAME
+        if not p.exists():
+            return {"models": [], "path": None}
+        try:
+            models = swc.parse_models(p.read_text(encoding="utf-8"))
+        except Exception:
+            return {"models": [], "path": str(p)}
+        return {"models": self._models_to_camel(models), "path": str(p)}
+
+    def import_llama_swap_config(self, path: str) -> dict:
+        """Parse an existing llama-swap config file (e.g. an old config.yaml)
+        into model defs. {models} | {error}."""
+        p = Path(str(path))
+        if not p.is_file():
+            return {"error": f"file not found: {path}"}
+        try:
+            models = swc.parse_models(p.read_text(encoding="utf-8"))
+        except Exception as e:
+            return {"error": f"could not parse: {e}"}
+        if not models:
+            return {"error": "no models found in that file"}
+        return {"models": self._models_to_camel(models)}
 
     # --- shape conversion -------------------------------------------------
     # UI speaks camelCase (TS), Python speaks snake_case (PEP8). One place

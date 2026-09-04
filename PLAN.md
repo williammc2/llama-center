@@ -14,11 +14,11 @@ Status: P0 done. Owner: @architect (plan) / @builder (code).
 | P1 llama-swap install/update | ✅ DONE + USER-VERIFIED | bridge+shell (`3d807b7`); release client TS (`llamaSwapRelease.ts`, real v253 fixtures + mock server); updater.py (download→sha256→staging→swap, keep 2 backups, rollback, port probe, stop-by-name); Home UI with update/rollback/conflict dialog. vitest 66 + pytest 61 green. Verified in native window: real v253 install to `%LOCALAPPDATA%\llama-center`, port-conflict dialog worked |
 | P2 llama.cpp install | ✅ DONE | `llamaCppNightly.ts` (releases-list walk newest→oldest, real b10816/b10814 fixtures, hardMajor from wizard choice); updater generalized per-component (`staging-<component>`, backup prefix); Home llama.cpp card (check/install/update/rollback, size shown). vitest 76 + pytest 63 green |
 | P3 run/logs/status | ✅ DONE | `process.py` (spawn piped stdio, CREATE_NO_WINDOW, ring buffer 2000 + rotating file 5MB×3, terminate→kill); Api start/stop/status/logs (`/health` + `/running` model list); Home: Start/Stop, 2s status poll (managed/external/stopped + models), log terminal, start conflict dialog, atexit anti-orphan. vitest 82 + pytest 76 green |
-| P4 config editor | ⏳ | |
+| P4 models config | ✅ DONE | `swapconfig.py` (models → `cmd` → `llama-swap.yaml`, llama-server path abstracted to the managed llama.cpp; parse/import of existing configs preserves unknown flags in `extra_flags`); Api save/get/import; Home "llama-swap models" card (per-model fields + validation + import from file); start uses `--config` and errors "no-config" clearly. vitest 82 + pytest 96 green |
 | P5 settings/tray/autostart | ⏳ | |
 | P6 packaging | ⏳ | PyInstaller onedir |
 
-**Next goal:** P4 — `llama-swap.json` editor with validation (field errors before save) + apply/reload without restart when supported.
+**Next goal:** P5 — Settings (port, language, auto-start L1/L2, check-on-start, close-to-tray), tray icon, onboarding polish. (P4 note: the config is applied on next Start; a live reload endpoint in llama-swap would be a P5+ polish.)
 
 ## 1. Stack (decided)
 
@@ -67,8 +67,11 @@ Documents was rejected: OneDrive sync + permission friction for binaries.
 }
 ```
 
-`llama-swap.json` (llama-swap's own config) lives inside `llama-swap\` and is edited by
-the app's validated editor (P4). App state and service config stay separate on purpose.
+`llama-swap.yaml` (llama-swap's own config) lives inside `llama-swap\` and is **generated**
+by the app's models editor (P4): per-model fields (name, .gguf, mmproj, draft, ctx,
+gpu-layers, threads, extra flags) → `cmd` line, with the llama-server path abstracted to
+the managed llama.cpp. Existing configs can be imported (unknown flags preserved verbatim).
+App state and service config stay separate on purpose.
 
 Design rule (P1): `config.json` **always** lives at the default per-user root
 (`%LOCALAPPDATA%\llama-center\` / `~/.local/share/llama-center/`). A custom `install_dir`
@@ -147,7 +150,7 @@ is stored *inside* the file — it means "where the components go", not where th
 | **P1** | llama-swap install + update check + atomic update + rollback + existing-process detection | Update on a running install: checksum verified, old version in backups, rollback restores. Wiremock tests for GitHub API |
 | **P2** | llama.cpp nightly discovery + install + update | Highest `b####` with matching asset discovered (resolver done, 27 tests); install produces runnable `llama-cli` |
 | **P3** | Start/stop llama-swap, terminal log view (ring buffer + file rotation), status panel via API polling | Start → status flips to running within 3s of API response; Stop → clean exit code surfaced; kill app → no orphan process |
-| **P4** | `llama-swap.json` editor with validation + apply/reload | Invalid JSON shows field errors before save; apply triggers reload without restart if supported |
+| **P4** | Models config editor (generates `llama-swap.yaml`) with validation + import | Field errors before save; import of an existing config.yaml round-trips; start fails with "no-config" when empty |
 | **P5** | Settings (port, language, auto-start L1/L2, check-on-start, close-to-tray), tray icon, onboarding polish | Each setting persists and takes effect; autostart entries created/removed correctly on both OSes |
 | **P6** | Packaging: PyInstaller (win onedir + linux), launcher scripts, CI matrix, README/docs | Packaged app runs on clean VM/container; updater finds next release |
 

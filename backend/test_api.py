@@ -196,6 +196,116 @@ class TestRunSurface:
         assert res["exitCode"] is None
 
 
+class TestSwapConfig:
+    """P4 — save/get/import of the llama-swap models config."""
+
+    MODEL = {
+        "name": "qwen3.8-27b",
+        "model": "D:\\models\\Qwen3.8-27B.gguf",
+        "mmproj": "D:\\models\\mmproj.gguf",
+        "draft": None,
+        "ctxSize": 262144,
+        "gpuLayers": 999,
+        "threads": 12,
+        "extraFlags": "--flash-attn on",
+    }
+
+    def _setup(self, home, with_cpp=True):
+        import os
+
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        if with_cpp:
+            (root / "llama-cpp").mkdir(parents=True)
+            exe = "llama-server.exe" if os.name == "nt" else "llama-server"
+            (root / "llama-cpp" / exe).write_bytes(b"x")
+        return root
+
+    def test_save_get_roundtrip(self, home):
+        root = self._setup(home)
+        api = Api()
+        res = api.save_llama_swap_config([self.MODEL])
+        assert "path" in res, res
+        p = Path(res["path"])
+        assert p == root / "llama-swap" / "llama-swap.yaml"
+        assert p.exists()
+
+        got = api.get_llama_swap_config()
+        assert got["path"] == str(p)
+        assert len(got["models"]) == 1
+        m = got["models"][0]
+        assert m["name"] == "qwen3.8-27b"
+        assert m["model"] == "D:\\models\\Qwen3.8-27B.gguf"
+        assert m["mmproj"] == "D:\\models\\mmproj.gguf"
+        assert m["ctxSize"] == 262144
+        assert m["gpuLayers"] == 999
+        assert m["threads"] == 12
+        assert "--flash-attn on" in m["extraFlags"]
+
+        # the generated cmd points at the MANAGED llama.cpp, not the user's
+        text = p.read_text(encoding="utf-8")
+        assert str(root / "llama-cpp") in text
+        assert "--port ${PORT}" in text
+
+    def test_save_requires_llama_cpp(self, home):
+        self._setup(home, with_cpp=False)
+        res = Api().save_llama_swap_config([self.MODEL])
+        assert res.get("error") == "llama-cpp-not-installed"
+
+    def test_save_validation_error(self, home):
+        self._setup(home)
+        bad = dict(self.MODEL)
+        bad2 = dict(self.MODEL)
+        bad2["model"] = ""
+        res = Api().save_llama_swap_config([bad, bad2])
+        assert "error" in res
+
+    def test_get_empty(self, home):
+        self._setup(home)
+        got = Api().get_llama_swap_config()
+        assert got == {"models": [], "path": None}
+
+    def test_import_user_file(self, home):
+        src = home / "old-config.yaml"
+        src.write_text(
+            "models:\n"
+            "  my-model:\n"
+            "    cmd: >\n"
+            "      D:\\llama-cpp\\llama-server.exe --host 127.0.0.1 --port ${PORT} "
+            '--model "D:\\models\\a b.gguf" --ctx-size 16384 --gpu-layers 33 --metrics\n',
+            encoding="utf-8",
+        )
+        res = Api().import_llama_swap_config(str(src))
+        assert "error" not in res, res
+        m = res["models"][0]
+        assert m["name"] == "my-model"
+        assert m["model"] == "D:\\models\\a b.gguf"
+        assert m["ctxSize"] == 16384
+        assert m["gpuLayers"] == 33
+        assert "--metrics" in m["extraFlags"]
+
+    def test_import_missing_file(self, home):
+        res = Api().import_llama_swap_config(str(home / "nope.yaml"))
+        assert "error" in res
+
+    def test_start_no_config(self, home):
+        """Installed but no config file -> 'no-config', not a cryptic crash."""
+        import os
+        import socket
+
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        root = self._setup(home)
+        (root / "llama-swap").mkdir(parents=True)
+        exe = "llama-swap.exe" if os.name == "nt" else "llama-swap"
+        (root / "llama-swap" / exe).write_bytes(b"x")
+        Api().save_config({"version": 1, "installDir": str(root), "llamaSwapPort": port})
+        res = Api().start_llama_swap()
+        assert res.get("error") == "no-config"
+
+
 class TestKeyMapping:
     def test_key_mapping_is_bidirectional(self):
         api = Api()

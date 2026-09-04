@@ -30,8 +30,11 @@
 - [x] No orphan process on app exit — atexit hook stops the managed process
 - [x] UI: Start/Stop buttons, log terminal, start conflict dialog (Stop & start / Adopt / Cancel), exit code surfaced on Stop
 
-## P4 — Config editor (owner: @builder)
-- [ ] `llama-swap.json` editor: validation, field errors, apply/reload
+## P4 — Models config (owner: @builder) ✅ DONE
+- [x] `swapconfig.py`: models → `cmd` → `llama-swap.yaml`; llama-server path abstracted to the managed llama.cpp
+- [x] Parse/import of existing configs (unknown flags preserved in `extra_flags`) — user's real config.yaml is a test fixture
+- [x] Api: `save/get/import_llama_swap_config`; start uses `--config`, errors "no-config" when empty
+- [x] Home "llama-swap models" card: per-model fields, validation (field errors before save), import from file
 
 ## P5 — Settings + tray (owner: @builder)
 - [ ] Settings: port, language, auto-start (app / llama-swap), check-on-start, close-to-tray, sycl precision (fp16/fp32)
