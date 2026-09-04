@@ -9,13 +9,13 @@
 - [x] Tests: 46 green (config, detect, resolver, wizard)
 
 ## P1 — llama-swap install/update (owner: @builder, review: @reviewer)
+- [x] Python bridge: `backend/bridge.py` + pywebview shell (`backend/main.py`) — native window, real config writes (`3d807b7`)
+- [x] pytest suite for bridge: 35 green (config rules, round-trips, corrupt files, OS matrix)
 - [ ] GitHub `releases/latest` client (mock-server tested)
 - [ ] Asset selection by OS+arch + checksum verification
 - [ ] Atomic update: download → verify → staging → swap (keep 2 backups)
 - [ ] Rollback button
 - [ ] Existing-process detection (port probe → Adopt / Stop & Take Over / Cancel)
-- [ ] Python bridge: `backend/bridge.py` (5 fns: config read/write, spawn/stop/pipe, download+sha256, tray) + pywebview shell (`backend/main.py`) — app runs as a real window
-- [ ] pytest suite for bridge (config round-trip, download+sha256 with local server)
 
 ## P2 — llama.cpp resolver + install (owner: @builder, review: @reviewer)
 - [x] Nightly resolver (TS, `src/lib/assetResolver.ts`) — 27 tests vs real b10814 fixture

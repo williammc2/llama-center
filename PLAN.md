@@ -11,7 +11,7 @@ Status: P0 done. Owner: @architect (plan) / @builder (code).
 |---|---|---|
 | P0 wizard + config + resolver | ✅ DONE | React 19 + Tailwind 4, 46 tests green, user verified wizard in browser |
 | Stack switch to pywebview/Python | ✅ DONE | `6aff54c`; deps installed (pywebview, pystray, pyinstaller 6.22.2) |
-| P1 llama-swap install/update | 🔜 NEXT | TS logic now; Python bridge when shell lands |
+| P1 llama-swap install/update | 🔜 IN PROGRESS | ✅ Python bridge + pywebview shell (`3d807b7`): native window runs, real `config.json` writes, pytest 35 + vitest 47 green (verified by @architect). ⏳ update check TS + download/verify/swap Python |
 | P2 llama.cpp install | ⏳ | resolver done (27 tests); discovery+install pending |
 | P3 run/logs/status | ⏳ | needs Python bridge (spawn, pipes) |
 | P4 config editor | ⏳ | |
@@ -69,6 +69,11 @@ Documents was rejected: OneDrive sync + permission friction for binaries.
 
 `llama-swap.json` (llama-swap's own config) lives inside `llama-swap\` and is edited by
 the app's validated editor (P4). App state and service config stay separate on purpose.
+
+Design rule (P1): `config.json` **always** lives at the default per-user root
+(`%LOCALAPPDATA%\llama-center\` / `~/.local/share/llama-center/`). A custom `install_dir`
+is stored *inside* the file — it means "where the components go", not where the config lives
+(avoiding chicken-and-egg on first run).
 
 ## 3. Update mechanics
 
