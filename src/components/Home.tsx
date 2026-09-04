@@ -358,12 +358,21 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between">
             <dt className="text-neutral-500">status</dt>
-            <dd className="font-mono text-neutral-200">
+            <dd className="flex items-center gap-2 font-mono text-neutral-200">
               {status?.portBusy
                 ? status.managed
                   ? `running (managed, pid ${status.pid})`
                   : 'running (external)'
                 : 'stopped'}
+              {status?.portBusy && (
+                <button
+                  type="button"
+                  onClick={() => void bridge.openUrl(`http://localhost:${cfg.llamaSwapPort}/`)}
+                  className="text-xs text-sky-400 underline decoration-sky-700 transition-colors hover:text-sky-300"
+                >
+                  open dashboard
+                </button>
+              )}
             </dd>
           </div>
           {status && status.models.length > 0 && (
@@ -703,6 +712,7 @@ function SwapModelsCard() {
   const [importPath, setImportPath] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [open, setOpen] = useState<Record<number, boolean>>({})
 
   useEffect(() => {
     void bridge
@@ -710,6 +720,8 @@ function SwapModelsCard() {
       .then((r) => setModels(r.models.length ? r.models : [emptyModel()]))
       .finally(() => setLoaded(true))
   }, [])
+
+  const toggle = (i: number) => setOpen((o) => ({ ...o, [i]: !o[i] }))
 
   const set = (i: number, patch: Partial<SwapModelDef>) =>
     setModels((ms) => ms.map((m, j) => (j === i ? { ...m, ...patch } : m)))
@@ -758,10 +770,22 @@ function SwapModelsCard() {
       <div className="mt-3 space-y-3">
         {models.map((m, i) => {
           const errs = allErrors[i]
+          const hasErr = Object.keys(errs).length > 0
           return (
-            <div key={i} className="rounded border border-neutral-800 bg-neutral-950/60 p-3">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-neutral-500">model #{i + 1}</span>
+            <div key={i} className="rounded border border-neutral-800 bg-neutral-950/60">
+              <div className="flex items-center justify-between gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => toggle(i)}
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                >
+                  <span className="font-mono text-xs text-neutral-500">{open[i] ? '▾' : '▸'}</span>
+                  <span className="truncate font-mono text-xs text-neutral-300">
+                    {m.name || `model #${i + 1}`}
+                    {m.model && <span className="text-neutral-600"> · {m.model}</span>}
+                  </span>
+                  {hasErr && <span className="h-2 w-2 shrink-0 rounded-full bg-red-500" title="has validation errors" />}
+                </button>
                 {models.length > 1 && (
                   <button
                     type="button"
@@ -772,7 +796,9 @@ function SwapModelsCard() {
                   </button>
                 )}
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
+              {open[i] && (
+                <div className="px-3 pb-3">
+                  <div className="mt-1 grid grid-cols-2 gap-2">
                 <Field label="name" error={errs.name}>
                   <input className={inputCls} value={m.name} onChange={(e) => set(i, { name: e.target.value })} placeholder="qwen3.8-27b" />
                 </Field>
@@ -806,7 +832,9 @@ function SwapModelsCard() {
                     />
                   </Field>
                 </div>
-              </div>
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
