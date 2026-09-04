@@ -128,7 +128,17 @@ the app's validated editor (P4). App state and service config stay separate on p
 - Windows/Linux system *services* (per-user processes only)
 - Docker mode, macOS, i18n beyond EN/PT-BR, PPA/deb/flatpak, GPU benchmarking
 
-## 8. Repo layout (target)
+## 8. Bridge pattern (decided 2026-09)
+
+All system access (fs read/write, process spawn/kill, downloads, tray, autostart) goes through
+one `bridge` interface in TS. Today it's a **browser stub** (in-memory, shows JSON in UI);
+when Rust lands it becomes the Tauri implementation — same 5 functions. This keeps P1–P4
+100% TS-testable and makes the shell swappable (Tauri gnu / Electron / Wails) a small change.
+
+Rust toolchain decision deferred: when the Tauri shell lands, use the **`gnu`** toolchain
+(x86_64-pc-windows-gnu, ~350MB, no MSVC Build Tools). P1–P4 don't need any of it.
+
+## 9. Repo layout (target)
 
 ```
 src-tauri/            # Rust core: config, updater, process manager, asset resolver
