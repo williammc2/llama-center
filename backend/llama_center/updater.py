@@ -3,14 +3,14 @@
 Pure fs + HTTP, no app state — the Api layer (main.py) resolves install_dir
 from config.json and calls these. Tested against a local HTTP server.
 
-Layout under install_dir:
-    llama-swap/                 live install
-    downloads/                  archives (staging area)
-    downloads/staging/          extracted content, ready to swap
-    backups/llama-swap/         previous installs, timestamped, last `keep`
+Layout under install_dir (per component — "llama-swap" or "llama-cpp"):
+    <component>/                    live install
+    downloads/                      archives (staging area, shared)
+    downloads/staging-<component>/  extracted content, ready to swap
+    backups/<component>/            previous installs, timestamped, last `keep`
 
 The decision side (which asset, expected SHA-256) lives in TS —
-src/lib/llamaSwapRelease.ts. Python only does the bytes.
+src/lib/llamaSwapRelease.ts / llamaCppNightly.ts. Python only does the bytes.
 """
 from __future__ import annotations
 
@@ -35,14 +35,14 @@ class UpdateError(Exception):
     """Anything that aborts an update, with a user-readable message."""
 
 
-def component_dirs(install_dir: str) -> dict[str, Path]:
-    """The managed paths for one install root."""
+def component_dirs(install_dir: str, component: str = "llama-swap") -> dict[str, Path]:
+    """The managed paths for one install root + component."""
     root = Path(install_dir)
     return {
-        "live": root / "llama-swap",
+        "live": root / component,
         "downloads": root / "downloads",
-        "staging": root / "downloads" / "staging",
-        "backups": root / "backups" / "llama-swap",
+        "staging": root / "downloads" / f"staging-{component}",
+        "backups": root / "backups" / component,
     }
 
 
@@ -115,10 +115,10 @@ def extract(archive: Path, dest: Path) -> Path:
     return _flatten(dest)
 
 
-def _backup_name(label: str | None) -> str:
+def _backup_name(component: str, label: str | None) -> str:
     ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     safe = (label or "unknown").replace("/", "-")
-    return f"llama-swap-{safe}-{ts}"
+    return f"{component}-{safe}-{ts}"
 
 
 def atomic_swap(
@@ -127,19 +127,21 @@ def atomic_swap(
     backups: Path,
     keep: int = KEEP_BACKUPS,
     label: str | None = None,
+    component: str = "llama-swap",
 ) -> str | None:
     """Move staged content into `live`; the previous live goes to `backups`.
 
-    `label` (e.g. "v253") records what is being replaced, so a later rollback
-    can restore the version. Returns the backup dir name, or None on a first
-    install (nothing to back up). Prunes backups older than `keep`.
+    `label` (e.g. "v253" / "b10816") records what is being replaced, so a
+    later rollback can restore the version. Returns the backup dir name, or
+    None on a first install (nothing to back up). Prunes backups older than
+    `keep`.
     """
     if not staging_content.is_dir() or not any(staging_content.iterdir()):
         raise UpdateError("swap: staging is missing or empty")
     backups.mkdir(parents=True, exist_ok=True)
     backup_name = None
     if live.exists():
-        backup_name = _backup_name(label)
+        backup_name = _backup_name(component, label)
         shutil.move(str(live), str(backups / backup_name))
     live.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(staging_content), str(live))

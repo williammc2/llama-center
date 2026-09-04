@@ -74,6 +74,22 @@ def server():
     httpd.server_close()
 
 
+class TestComponentDirs:
+    def test_llama_swap_defaults(self, tmp_path):
+        d = updater.component_dirs(str(tmp_path))
+        assert d["live"].name == "llama-swap"
+        assert d["staging"].name == "staging-llama-swap"
+        assert d["backups"].name == "llama-swap"
+
+    def test_llama_cpp_paths(self, tmp_path):
+        d = updater.component_dirs(str(tmp_path), "llama-cpp")
+        assert d["live"] == tmp_path / "llama-cpp"
+        assert d["staging"] == tmp_path / "downloads" / "staging-llama-cpp"
+        assert d["backups"] == tmp_path / "backups" / "llama-cpp"
+        # downloads area is shared between components
+        assert d["downloads"] == updater.component_dirs(str(tmp_path))["downloads"]
+
+
 class TestDownload:
     def test_ok_with_matching_checksum(self, server, tmp_path):
         url = f"http://127.0.0.1:{server['port']}/flat.zip"

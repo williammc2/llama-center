@@ -11,11 +11,11 @@ P0 surface:
   - get_detection() → OS/arch/CUDA probe result
   - get_platform() → "win" | "linux" | "macos"
 
-P1 surface (llama-swap install/update):
-  - download_and_stage(url, sha256) → {staging} | {error}
-  - swap_llama_swap() → {backup} | {error}
-  - rollback_llama_swap() → {rolledBack} | {error}
-  - list_llama_swap_backups() → [names, newest first]
+P1 surface (install/update, per component — "llama-swap" | "llama-cpp"):
+  - download_and_stage(component, url, sha256) → {staging} | {error}
+  - swap_component(component) → {backup} | {error}
+  - rollback_component(component) → {rolledBack} | {error}
+  - list_component_backups(component) → [names, newest first]
   - probe_port(port) → bool
   - stop_llama_swap() → bool
 """
@@ -78,21 +78,30 @@ class Api:
 
     # --- P1: llama-swap install/update -------------------------------------
 
-    def _dirs(self) -> dict:
+    def _dirs(self, component: str = "llama-swap") -> dict:
         """Managed paths for the configured install dir. Raises ConfigError."""
         cfg = load_config()
         if not cfg.install_dir:
             raise ConfigError("install_dir not set — run the wizard first")
-        return updater.component_dirs(cfg.install_dir)
+        return updater.component_dirs(cfg.install_dir, component)
 
-    def download_and_stage(self, url: str, sha256: str | None = None) -> dict:
+    def _installed_label(self, component: str) -> str | None:
+        """What is currently installed, for the backup dir name."""
+        cfg = load_config()
+        if component == "llama-swap" and cfg.llama_swap_installed:
+            return f"v{cfg.llama_swap_installed}"
+        if component == "llama-cpp" and cfg.llama_cpp_installed:
+            return cfg.llama_cpp_installed
+        return None
+
+    def download_and_stage(self, component: str, url: str, sha256: str | None = None) -> dict:
         """Download a release asset, verify SHA-256, extract to staging.
 
         Returns {staging: <content dir>} or {error}.
         """
         try:
-            d = self._dirs()
-            name = url.rsplit("/", 1)[-1].split("?")[0] or "llama-swap"
+            d = self._dirs(component)
+            name = url.rsplit("/", 1)[-1].split("?")[0] or component
             archive = d["downloads"] / name
             updater.download(url, archive, sha256)
             content = updater.extract(archive, d["staging"])
@@ -100,32 +109,32 @@ class Api:
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
 
-    def swap_llama_swap(self) -> dict:
+    def swap_component(self, component: str) -> dict:
         """Swap staging into the live dir; previous install → backups.
 
         Returns {backup: <name> | null} or {error}.
         """
         try:
-            d = self._dirs()
-            cfg = load_config()
-            label = f"v{cfg.llama_swap_installed}" if cfg.llama_swap_installed else None
-            backup = updater.atomic_swap(d["live"], d["staging"], d["backups"], label=label)
+            d = self._dirs(component)
+            backup = updater.atomic_swap(
+                d["live"], d["staging"], d["backups"], label=self._installed_label(component), component=component
+            )
             return {"backup": backup}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
 
-    def rollback_llama_swap(self) -> dict:
+    def rollback_component(self, component: str) -> dict:
         """Restore the newest backup. Returns {rolledBack: bool} or {error}."""
         try:
-            d = self._dirs()
+            d = self._dirs(component)
             return {"rolledBack": updater.rollback(d["live"], d["backups"])}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
 
-    def list_llama_swap_backups(self) -> list:
+    def list_component_backups(self, component: str) -> list:
         """Backup dir names, newest first. [] when none (or no config)."""
         try:
-            return updater.list_backups(self._dirs()["backups"])
+            return updater.list_backups(self._dirs(component)["backups"])
         except ConfigError:
             return []
 
@@ -146,6 +155,7 @@ class Api:
         "cudaMajor": "cuda_major",
         "cudaFamily": "cuda_family",
         "llamaCppPin": "llama_cpp_pin",
+        "llamaCppInstalled": "llama_cpp_installed",
         "llamaSwapPort": "llama_swap_port",
         "llamaSwapInstalled": "llama_swap_installed",
         "startWithSystem": "start_with_system",

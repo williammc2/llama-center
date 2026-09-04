@@ -18,10 +18,10 @@
 - [x] Existing-process detection (port probe → Adopt / Stop & Take Over / Cancel) — `probe_port`/`stop_llama_swap` + conflict dialog in Home
 - [x] Installed version tracked in config (`llamaSwapInstalled`), persisted after swap/rollback
 
-## P2 — llama.cpp resolver + install (owner: @builder, review: @reviewer)
+## P2 — llama.cpp resolver + install (owner: @builder, review: @reviewer) ✅ DONE
 - [x] Nightly resolver (TS, `src/lib/assetResolver.ts`) — 27 tests vs real b10814 fixture
-- [ ] Nightly discovery: highest `b####` with matching `{os}-{backend}` asset (calls resolver)
-- [ ] Install/update/rollback (same atomic flow as P1)
+- [x] Nightly discovery: highest `b####` with matching `{os}-{backend}` asset (calls resolver) — `src/lib/llamaCppNightly.ts`, real b10816/b10814 fixtures + mock server
+- [x] Install/update/rollback (same atomic flow as P1) — updater.py generalized per component; Home llama.cpp card; `llamaCppInstalled` in config
 
 ## P3 — Run + logs + status (owner: @builder)
 - [ ] Spawn llama-swap (piped stdio, CREATE_NO_WINDOW on win)
