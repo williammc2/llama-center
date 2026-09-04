@@ -8,14 +8,15 @@
 - [x] Wizard writes `config.json` (browser stub shows JSON; real fs write via Python bridge)
 - [x] Tests: 46 green (config, detect, resolver, wizard)
 
-## P1 — llama-swap install/update (owner: @builder, review: @reviewer)
+## P1 — llama-swap install/update (owner: @builder, review: @reviewer) ✅ DONE
 - [x] Python bridge: `backend/bridge.py` + pywebview shell (`backend/main.py`) — native window, real config writes (`3d807b7`)
 - [x] pytest suite for bridge: 35 green (config rules, round-trips, corrupt files, OS matrix)
-- [ ] GitHub `releases/latest` client (mock-server tested)
-- [ ] Asset selection by OS+arch + checksum verification
-- [ ] Atomic update: download → verify → staging → swap (keep 2 backups)
-- [ ] Rollback button
-- [ ] Existing-process detection (port probe → Adopt / Stop & Take Over / Cancel)
+- [x] GitHub `releases/latest` client (mock-server tested) — `src/lib/llamaSwapRelease.ts`, real v253 fixtures
+- [x] Asset selection by OS+arch + checksum verification — `pickAsset` + SHA-256 from API digest (checksums.txt parsed as cross-check)
+- [x] Atomic update: download → verify → staging → swap (keep 2 backups) — `backend/llama_center/updater.py`
+- [x] Rollback button — `rollback()` parks the failed install (`.failed`), Home shows Rollback when backups exist
+- [x] Existing-process detection (port probe → Adopt / Stop & Take Over / Cancel) — `probe_port`/`stop_llama_swap` + conflict dialog in Home
+- [x] Installed version tracked in config (`llamaSwapInstalled`), persisted after swap/rollback
 
 ## P2 — llama.cpp resolver + install (owner: @builder, review: @reviewer)
 - [x] Nightly resolver (TS, `src/lib/assetResolver.ts`) — 27 tests vs real b10814 fixture
