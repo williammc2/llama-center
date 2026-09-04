@@ -1,21 +1,21 @@
 # Llama Center — Tasks
 
-## P0 — Scaffold + wizard (owner: @builder)
-- [ ] Scaffold: Tauri v2 + Vite + React 19 + TS + Tailwind + shadcn/ui
-- [ ] i18n setup: EN (default) + PT-BR, toggle stub in Settings
-- [ ] Rust: `config.json` schema (serde) + read/write + migration hook
-- [ ] Wizard step 1: detect OS/arch; `nvidia-smi` probe → suggest CUDA 12/13
-- [ ] Wizard step 2: backend choice (CUDA 13 / CUDA 12 / Vulkan / CPU)
-- [ ] Wizard step 3: install dir (default per-OS, editable)
-- [ ] Wizard writes `config.json`, sets `firstRunDone`
-- [ ] Tests: config round-trip (Rust), wizard component (Vitest)
+## P0 — Scaffold + wizard (owner: @builder) ✅ DONE
+- [x] Scaffold: Vite + React 19 + TS + Tailwind 4 (pywebview shell lands with P1/P3)
+- [x] i18n setup: EN (default) + PT-BR, toggle stub in Settings
+- [x] `config.ts` (schema + validate/coerce) + `detect.ts` — fully unit-tested
+- [x] Wizard: OS/arch detect, backend matrix, CUDA major+family, install dir, port, language
+- [x] Wizard writes `config.json` (browser stub shows JSON; real fs write via Python bridge)
+- [x] Tests: 46 green (config, detect, resolver, wizard)
 
 ## P1 — llama-swap install/update (owner: @builder, review: @reviewer)
-- [ ] GitHub `releases/latest` client (wiremock-tested)
+- [ ] GitHub `releases/latest` client (mock-server tested)
 - [ ] Asset selection by OS+arch + checksum verification
 - [ ] Atomic update: download → verify → staging → swap (keep 2 backups)
 - [ ] Rollback button
 - [ ] Existing-process detection (port probe → Adopt / Stop & Take Over / Cancel)
+- [ ] Python bridge: `backend/bridge.py` (5 fns: config read/write, spawn/stop/pipe, download+sha256, tray) + pywebview shell (`backend/main.py`) — app runs as a real window
+- [ ] pytest suite for bridge (config round-trip, download+sha256 with local server)
 
 ## P2 — llama.cpp resolver + install (owner: @builder, review: @reviewer)
 - [x] Nightly resolver (TS, `src/lib/assetResolver.ts`) — 27 tests vs real b10814 fixture
