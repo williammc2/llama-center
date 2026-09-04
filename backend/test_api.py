@@ -142,6 +142,60 @@ class TestApi:
             httpd.server_close()
 
 
+class TestRunSurface:
+    """P3 — start/stop/status/logs."""
+
+    def test_status_shape(self, home):
+        # Point the config at a free port so a user's real llama-swap (8085)
+        # doesn't leak into the assertion.
+        import socket
+
+        s0 = socket.socket()
+        s0.bind(("127.0.0.1", 0))
+        port = s0.getsockname()[1]
+        s0.close()
+        Api().save_config({"version": 1, "installDir": str(home / "root"), "llamaSwapPort": port})
+        s = Api().llama_swap_status()
+        assert set(s) == {"managed", "pid", "portBusy", "healthy", "models"}
+        assert s["managed"] is False
+        assert s["pid"] is None
+        assert s["portBusy"] is False
+        assert s["healthy"] is False
+        assert s["models"] == []
+
+    def test_logs_empty_without_process(self, home):
+        assert Api().llama_swap_logs() == []
+
+    def test_start_not_installed(self, home):
+        Api().save_config({"version": 1, "installDir": str(home / "root")})
+        res = Api().start_llama_swap()
+        assert res.get("error") == "not-installed"
+
+    def test_start_port_in_use(self, home):
+        import os
+        import socket
+
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)  # bound-but-not-listening doesn't accept connects on Windows
+        port = s.getsockname()[1]
+        try:
+            root = home / "root"
+            (root / "llama-swap").mkdir(parents=True)
+            exe = "llama-swap.exe" if os.name == "nt" else "llama-swap"
+            (root / "llama-swap" / exe).write_bytes(b"x")
+            Api().save_config({"version": 1, "installDir": str(root), "llamaSwapPort": port})
+            res = Api().start_llama_swap()
+            assert res.get("error") == "port-in-use"
+        finally:
+            s.close()
+
+    def test_stop_without_process(self, home):
+        res = Api().stop_llama_swap()
+        assert res["stopped"] in (True, False)  # by-name pkill result
+        assert res["exitCode"] is None
+
+
 class TestKeyMapping:
     def test_key_mapping_is_bidirectional(self):
         api = Api()

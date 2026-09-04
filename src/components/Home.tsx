@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { bridge, type DownloadProgress } from '../lib/bridge'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { bridge, type DownloadProgress, type SwapStatus } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
 import { fetchLatestRelease, pickAsset, type SwapRelease } from '../lib/llamaSwapRelease'
@@ -32,20 +32,24 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
   const [cppPhase, setCppPhase] = useState<Phase>({ status: 'idle' })
   const [cppBackups, setCppBackups] = useState<string[]>([])
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
+  const [status, setStatus] = useState<SwapStatus | null>(null)
+  const [logs, setLogs] = useState<string[]>([])
+  const [showLogs, setShowLogs] = useState(false)
+  const [startConflict, setStartConflict] = useState(false)
   const [busy, setBusy] = useState(false)
+  const showLogsRef = useRef(showLogs)
+  showLogsRef.current = showLogs
 
   const installed = cfg.llamaSwapInstalled
 
   const refresh = useCallback(async () => {
-    const [busyNow, list, cppList] = await Promise.all([
-      bridge.probePort(cfg.llamaSwapPort),
+    const [list, cppList] = await Promise.all([
       bridge.listComponentBackups('llama-swap'),
       bridge.listComponentBackups('llama-cpp'),
     ])
-    setPortBusy(busyNow)
     setBackups(list)
     setCppBackups(cppList)
-  }, [cfg.llamaSwapPort])
+  }, [])
 
   const check = useCallback(async () => {
     setPhase({ status: 'checking' })
@@ -90,6 +94,23 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
     return () => {
       off?.()
     }
+  }, [])
+
+  // Runtime status poll (~2s): port, /health, /running, and the log tail.
+  useEffect(() => {
+    const tick = async () => {
+      try {
+        const s = await bridge.llamaSwapStatus()
+        setStatus(s)
+        setPortBusy(s.portBusy)
+        if (showLogsRef.current) setLogs(await bridge.llamaSwapLogs(200))
+      } catch {
+        // keep the last known state
+      }
+    }
+    void tick()
+    const id = setInterval(() => void tick(), 2000)
+    return () => clearInterval(id)
   }, [])
 
   // --- llama-swap flow ------------------------------------------------------
@@ -163,6 +184,49 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
       await refresh()
     } catch (e) {
       setPhase({ status: 'error', message: e instanceof Error ? e.message : 'rollback failed' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // --- start/stop flow ------------------------------------------------------
+
+  const doStart = async (stopFirst: boolean) => {
+    setStartConflict(false)
+    setBusy(true)
+    try {
+      if (stopFirst) await bridge.stopLlamaSwap()
+      const res = await bridge.startLlamaSwap()
+      if (res.error === 'port-in-use') {
+        setStartConflict(true)
+        return
+      }
+      if (res.error) {
+        setPhase({
+          status: 'error',
+          message: res.error === 'not-installed' ? 'install llama-swap first' : res.error,
+        })
+        return
+      }
+      setPhase({ status: 'done', message: `started (pid ${res.pid})` })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startClick = () => {
+    if (status?.portBusy) setStartConflict(true)
+    else void doStart(false)
+  }
+
+  const doStop = async () => {
+    setBusy(true)
+    try {
+      const r = await bridge.stopLlamaSwap()
+      setPhase({
+        status: r.stopped ? 'done' : 'error',
+        message: r.stopped ? `stopped (exit code ${r.exitCode ?? 'n/a'})` : 'not running (or not found)',
+      })
     } finally {
       setBusy(false)
     }
@@ -286,6 +350,24 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
 
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between">
+            <dt className="text-neutral-500">status</dt>
+            <dd className="font-mono text-neutral-200">
+              {status?.portBusy
+                ? status.managed
+                  ? `running (managed, pid ${status.pid})`
+                  : 'running (external)'
+                : 'stopped'}
+            </dd>
+          </div>
+          {status && status.models.length > 0 && (
+            <div className="flex justify-between">
+              <dt className="text-neutral-500">models</dt>
+              <dd className="max-w-[60%] truncate font-mono text-neutral-200" title={status.models.map((m) => m.model).join(', ')}>
+                {status.models.map((m) => m.model).join(', ')}
+              </dd>
+            </div>
+          )}
+          <div className="flex justify-between">
             <dt className="text-neutral-500">installed</dt>
             <dd className="font-mono text-neutral-200">{installed === null ? '—' : `v${installed}`}</dd>
           </div>
@@ -300,6 +382,32 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
         </dl>
 
         <div className="mt-4 flex flex-wrap gap-2">
+          {status?.portBusy ? (
+            <button
+              type="button"
+              onClick={() => void doStop()}
+              disabled={busyAny}
+              className="rounded-md border border-amber-700 px-4 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:border-amber-500 disabled:opacity-50"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startClick}
+              disabled={busyAny}
+              className="rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"
+            >
+              Start
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowLogs((v) => !v)}
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+          >
+            {showLogs ? 'Hide logs' : 'Logs'}
+          </button>
           <button
             type="button"
             onClick={() => void check()}
@@ -330,6 +438,11 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
           )}
         </div>
 
+        {showLogs && (
+          <pre className="mt-3 max-h-48 overflow-auto rounded border border-neutral-800 bg-neutral-950 p-2 font-mono text-[11px] leading-4 text-neutral-300">
+            {logs.length ? logs.join('\n') : 'no output yet'}
+          </pre>
+        )}
         {upToDate && latest && <p className="mt-3 text-xs text-emerald-600">Up to date (v{installed}).</p>}
         {phaseLine && <p className="mt-3 text-xs text-neutral-400">{phaseLine}</p>}
         {progress?.component === 'llama-swap' && phase.status === 'downloading' && <Progress p={progress} />}
@@ -433,6 +546,39 @@ export function Home({ cfg, detection, onReconfigure }: HomeProps) {
         )}
       </section>
 
+      {startConflict && (
+        <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5">
+            <h3 className="text-sm font-medium text-neutral-200">Port {cfg.llamaSwapPort} is in use</h3>
+            <p className="mt-2 text-sm text-neutral-400">
+              Something is already listening — likely a llama-swap started outside this app.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => void doStart(true)}
+                className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500"
+              >
+                Stop & start
+              </button>
+              <button
+                type="button"
+                onClick={() => setStartConflict(false)}
+                className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+              >
+                Adopt (leave it running)
+              </button>
+              <button
+                type="button"
+                onClick={() => setStartConflict(false)}
+                className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {conflict && (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5">

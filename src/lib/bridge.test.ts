@@ -59,7 +59,19 @@ describe('bridge — lazy shell resolution', () => {
           },
           stop_llama_swap: async () => {
             calls.push('stop_llama_swap')
-            return false
+            return { stopped: false, exitCode: null }
+          },
+          start_llama_swap: async () => {
+            calls.push('start_llama_swap')
+            return { pid: 42 }
+          },
+          llama_swap_status: async () => {
+            calls.push('llama_swap_status')
+            return { managed: false, pid: null, portBusy: false, healthy: false, models: [] }
+          },
+          llama_swap_logs: async () => {
+            calls.push('llama_swap_logs')
+            return []
           },
         },
       },
@@ -76,7 +88,16 @@ describe('bridge — lazy shell resolution', () => {
     expect(await bridge.rollbackComponent('llama-cpp')).toBe(false)
     expect(await bridge.listComponentBackups('llama-swap')).toEqual([])
     expect(await bridge.probePort(8085)).toBe(false)
-    expect(await bridge.stopLlamaSwap()).toBe(false)
+    expect(await bridge.stopLlamaSwap()).toEqual({ stopped: false, exitCode: null })
+    expect(await bridge.startLlamaSwap()).toEqual({ pid: 42 })
+    expect(await bridge.llamaSwapStatus()).toEqual({
+      managed: false,
+      pid: null,
+      portBusy: false,
+      healthy: false,
+      models: [],
+    })
+    expect(await bridge.llamaSwapLogs()).toEqual([])
 
     // progress pushes: Python calls window.__lcProgress, which is our callback
     const off = await bridge.onDownloadProgress((p) => calls.push(`progress:${p.received}`))

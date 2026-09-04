@@ -19,6 +19,19 @@ export interface DownloadProgress {
   total: number | null
 }
 
+/** llama-swap runtime status (polled ~2s by the UI). */
+export interface SwapStatus {
+  /** We spawned it and it is alive. */
+  managed: boolean
+  pid: number | null
+  /** Something listens on the port (managed or external). */
+  portBusy: boolean
+  /** GET /health answered 200. */
+  healthy: boolean
+  /** Models reported by GET /running. */
+  models: Array<{ model: string; state: string }>
+}
+
 export interface Bridge {
   /** Current config on disk, or null (first run). */
   getConfig(): Promise<AppConfig | null>
@@ -40,8 +53,14 @@ export interface Bridge {
   listComponentBackups(component: string): Promise<string[]>
   /** True when something listens on 127.0.0.1:<port>. */
   probePort(port: number): Promise<boolean>
-  /** Best-effort kill of a running llama-swap. True when a process was killed. */
-  stopLlamaSwap(): Promise<boolean>
+  /** Spawn the installed llama-swap. error: "port-in-use" | "not-installed" | … */
+  startLlamaSwap(): Promise<{ pid?: number; error?: string; port?: number }>
+  /** Stop a running llama-swap (managed first, then by image name). */
+  stopLlamaSwap(): Promise<{ stopped: boolean; exitCode: number | null }>
+  /** Structured runtime status for the card (poll ~2s). */
+  llamaSwapStatus(): Promise<SwapStatus>
+  /** Last n lines of the managed process (newest last). */
+  llamaSwapLogs(n?: number): Promise<string[]>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -61,7 +80,10 @@ interface PywebviewApi {
   rollback_component(component: string): Promise<{ rolledBack?: boolean; error?: string }>
   list_component_backups(component: string): Promise<string[]>
   probe_port(port: number): Promise<boolean>
-  stop_llama_swap(): Promise<boolean>
+  start_llama_swap(): Promise<{ pid?: number; error?: string; port?: number }>
+  stop_llama_swap(): Promise<{ stopped?: boolean; exitCode?: number | null }>
+  llama_swap_status(): Promise<SwapStatus>
+  llama_swap_logs(n?: number): Promise<string[]>
 }
 
 declare global {
@@ -112,8 +134,18 @@ const pywebview: Bridge = {
   async probePort(port) {
     return window.pywebview!.api.probe_port(port)
   },
+  async startLlamaSwap() {
+    return window.pywebview!.api.start_llama_swap()
+  },
   async stopLlamaSwap() {
-    return window.pywebview!.api.stop_llama_swap()
+    const res = await window.pywebview!.api.stop_llama_swap()
+    return { stopped: res.stopped === true, exitCode: res.exitCode ?? null }
+  },
+  async llamaSwapStatus() {
+    return window.pywebview!.api.llama_swap_status()
+  },
+  async llamaSwapLogs(n = 200) {
+    return window.pywebview!.api.llama_swap_logs(n)
   },
   async onDownloadProgress(cb) {
     window.__lcProgress = cb
@@ -163,8 +195,17 @@ const browser: Bridge = {
   async probePort() {
     return false
   },
+  async startLlamaSwap() {
+    return { error: 'not-installed' }
+  },
   async stopLlamaSwap() {
-    return false
+    return { stopped: false, exitCode: null }
+  },
+  async llamaSwapStatus() {
+    return { managed: false, pid: null, portBusy: false, healthy: false, models: [] }
+  },
+  async llamaSwapLogs() {
+    return []
   },
   async onDownloadProgress() {
     return () => {}
