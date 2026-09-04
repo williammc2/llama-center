@@ -8,7 +8,11 @@ import type { Detection } from '../lib/detect'
 
 interface WizardProps {
   detection: Detection
+  /** Pre-fill fields from an existing config (reconfigure flow). */
+  initial?: AppConfig
   onSaved: (cfg: AppConfig) => void
+  /** When provided, a Back button returns to the previous screen. */
+  onBack?: () => void
 }
 
 const DEFAULT_DIR: Record<string, string> = {
@@ -27,13 +31,13 @@ const BACKEND_LABEL: Record<Backend, string> = {
   opencl: 'OpenCL',
 }
 
-export function Wizard({ detection, onSaved }: WizardProps) {
-  const [backend, setBackend] = useState<Backend>(detection.suggestCuda ? 'cuda' : 'cpu')
-  const [cudaMajor, setCudaMajor] = useState<12 | 13>(13)
-  const [cudaFamily, setCudaFamily] = useState<'cudart' | 'plain'>('cudart')
-  const [installDir, setInstallDir] = useState(DEFAULT_DIR[detection.os] ?? '')
-  const [port, setPort] = useState(DEFAULT_CONFIG.llamaSwapPort)
-  const [lang, setLang] = useState<Lang>('en')
+export function Wizard({ detection, initial, onSaved, onBack }: WizardProps) {
+  const [backend, setBackend] = useState<Backend>(initial?.backend ?? (detection.suggestCuda ? 'cuda' : 'cpu'))
+  const [cudaMajor, setCudaMajor] = useState<12 | 13>(initial?.cudaMajor ?? 13)
+  const [cudaFamily, setCudaFamily] = useState<'cudart' | 'plain'>(initial?.cudaFamily ?? 'cudart')
+  const [installDir, setInstallDir] = useState(initial?.installDir || (DEFAULT_DIR[detection.os] ?? ''))
+  const [port, setPort] = useState(initial?.llamaSwapPort ?? DEFAULT_CONFIG.llamaSwapPort)
+  const [lang, setLang] = useState<Lang>(initial?.lang ?? 'en')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -58,6 +62,8 @@ export function Wizard({ detection, onSaved }: WizardProps) {
       cudaFamily: backend === 'cuda' ? cudaFamily : undefined,
       llamaSwapPort: port,
       lang,
+      // Reconfigure must not wipe a recorded install (the files still exist).
+      llamaSwapInstalled: initial?.llamaSwapInstalled ?? null,
     }
     setSaving(true)
     setError(null)
@@ -82,7 +88,8 @@ export function Wizard({ detection, onSaved }: WizardProps) {
       <header>
         <h1 className="text-2xl font-semibold tracking-tight">llama-center</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          First run — set up llama.cpp + llama-swap. Detected: <span className="font-mono text-neutral-400">{detectedLine}</span>
+          {initial ? 'Change setup' : 'First run — set up llama.cpp + llama-swap'}. Detected:{' '}
+          <span className="font-mono text-neutral-400">{detectedLine}</span>
         </p>
         {detection.suggestCuda && (
           <p className="mt-1 text-sm text-emerald-600">NVIDIA GPU detected — CUDA pre-selected.</p>
@@ -180,14 +187,26 @@ export function Wizard({ detection, onSaved }: WizardProps) {
         </p>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={saving}
+            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+          >
+            Back
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           type="button"
           onClick={finish}
           disabled={saving}
           className="rounded-md bg-sky-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-wait disabled:opacity-60"
         >
-          {saving ? 'Saving…' : 'Save & continue'}
+          {saving ? 'Saving…' : initial ? 'Save changes' : 'Save & continue'}
         </button>
       </div>
     </div>

@@ -15,9 +15,11 @@ type Phase =
 interface HomeProps {
   cfg: AppConfig
   detection: Detection
+  /** Open the wizard pre-filled with the current config (change port, etc). */
+  onReconfigure?: () => void
 }
 
-export function Home({ cfg, detection }: HomeProps) {
+export function Home({ cfg, detection, onReconfigure }: HomeProps) {
   const [latest, setLatest] = useState<SwapRelease | null>(null)
   const [phase, setPhase] = useState<Phase>({ status: 'idle' })
   const [portBusy, setPortBusy] = useState(false)
@@ -134,12 +136,23 @@ export function Home({ cfg, detection }: HomeProps) {
 
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-4">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">llama-center</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          backend <span className="font-mono text-neutral-400">{cfg.backend}</span> · port{' '}
-          <span className="font-mono text-neutral-400">{cfg.llamaSwapPort}</span>
-        </p>
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">llama-center</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            backend <span className="font-mono text-neutral-400">{cfg.backend}</span> · port{' '}
+            <span className="font-mono text-neutral-400">{cfg.llamaSwapPort}</span>
+          </p>
+        </div>
+        {onReconfigure && (
+          <button
+            type="button"
+            onClick={onReconfigure}
+            className="mt-1 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+          >
+            Change setup
+          </button>
+        )}
       </header>
 
       <section className="rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
