@@ -32,6 +32,23 @@ export interface SwapStatus {
   models: Array<{ model: string; state: string }>
 }
 
+/**
+ * One model entry in the llama-swap config. The app renders these into the
+ * `cmd` line; the llama-server path is abstracted (points at the managed
+ * llama.cpp). Free-form `extraFlags` carries anything we don't expose as a
+ * field (spec decoding, sampling, logging…).
+ */
+export interface SwapModelDef {
+  name: string
+  model: string
+  mmproj?: string | null
+  draft?: string | null
+  ctxSize: number
+  gpuLayers: number
+  threads?: number | null
+  extraFlags: string
+}
+
 export interface Bridge {
   /** Current config on disk, or null (first run). */
   getConfig(): Promise<AppConfig | null>
@@ -61,6 +78,12 @@ export interface Bridge {
   llamaSwapStatus(): Promise<SwapStatus>
   /** Last n lines of the managed process (newest last). */
   llamaSwapLogs(n?: number): Promise<string[]>
+  /** Render model defs into llama-swap.yaml inside the install dir. */
+  saveLlamaSwapConfig(models: SwapModelDef[]): Promise<{ path?: string; error?: string }>
+  /** Read the managed config back into model defs (UI prefill). */
+  getLlamaSwapConfig(): Promise<{ models: SwapModelDef[]; path: string | null }>
+  /** Parse an existing config file (e.g. an old config.yaml) into model defs. */
+  importLlamaSwapConfig(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -84,6 +107,9 @@ interface PywebviewApi {
   stop_llama_swap(): Promise<{ stopped?: boolean; exitCode?: number | null }>
   llama_swap_status(): Promise<SwapStatus>
   llama_swap_logs(n?: number): Promise<string[]>
+  save_llama_swap_config(models: SwapModelDef[]): Promise<{ path?: string; error?: string }>
+  get_llama_swap_config(): Promise<{ models: SwapModelDef[]; path: string | null }>
+  import_llama_swap_config(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
 }
 
 declare global {
@@ -147,6 +173,15 @@ const pywebview: Bridge = {
   async llamaSwapLogs(n = 200) {
     return window.pywebview!.api.llama_swap_logs(n)
   },
+  async saveLlamaSwapConfig(models) {
+    return window.pywebview!.api.save_llama_swap_config(models)
+  },
+  async getLlamaSwapConfig() {
+    return window.pywebview!.api.get_llama_swap_config()
+  },
+  async importLlamaSwapConfig(path) {
+    return window.pywebview!.api.import_llama_swap_config(path)
+  },
   async onDownloadProgress(cb) {
     window.__lcProgress = cb
     return () => {
@@ -206,6 +241,15 @@ const browser: Bridge = {
   },
   async llamaSwapLogs() {
     return []
+  },
+  async saveLlamaSwapConfig() {
+    return { error: 'needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)' }
+  },
+  async getLlamaSwapConfig() {
+    return { models: [], path: null }
+  },
+  async importLlamaSwapConfig() {
+    return { error: 'needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)' }
   },
   async onDownloadProgress() {
     return () => {}
