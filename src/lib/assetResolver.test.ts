@@ -298,7 +298,7 @@ describe('BACKENDS_BY_OS — per-OS wizard matrix (architect decision)', () => {
     // over-promises (caught: win opencl is arm64-only, no x64 twin).
     for (const os of ['win', 'linux'] as const) {
       for (const backend of backendsFor(os)) {
-        const anyArch = ['x64', 'arm64'].some(
+        const anyArch = (['x64', 'arm64'] as const).some(
           (arch) => resolve(B10814, { os, arch, backend }).status === 'ok',
         )
         expect(anyArch, `${os} ${backend} offered by wizard but no b10814 asset for any arch`).toBe(true)
