@@ -143,4 +143,15 @@ const browser: Bridge = {
   },
 }
 
-export const bridge: Bridge = isPywebview() ? pywebview : browser
+/**
+ * The implementation is resolved PER CALL, not at import time: pywebview
+ * injects `window.pywebview.api` asynchronously, so a const bound during
+ * module init would race the injection and stick to the browser stub even
+ * inside the native window (App waits for the api before the first call).
+ */
+export const bridge: Bridge = new Proxy({} as Bridge, {
+  get(_target, prop) {
+    const impl = isPywebview() ? pywebview : browser
+    return impl[prop as keyof Bridge]
+  },
+})
