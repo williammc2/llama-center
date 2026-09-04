@@ -37,7 +37,6 @@
 - [ ] Onboarding polish
 
 ## P6 — Packaging + release (owner: @releaser)
-- [ ] NSIS installer (per-user) + AppImage
-- [ ] tauri-plugin-updater + release workflow
-- [ ] CI matrix win/ubuntu; clean-VM install test
-- [ ] README + user docs (EN)
+- [ ] PyInstaller onedir (win) + linux launcher; clean-VM install test
+- [ ] App self-update: manual check + redownload (auto-update deferred)
+- [ ] CI matrix win/ubuntu; README + user docs (EN)

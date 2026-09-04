@@ -9,17 +9,19 @@ Status: P0 in progress. Owner: @architect (plan) / @builder (code).
 
 | Layer | Choice | Why |
 |---|---|---|
-| Shell | **Tauri v2** (Rust) | ~15MB binary, Rust for process management (spawn, stdio pipes, exit codes) |
+| Shell | **pywebview (Python 3.11)** — WebView2 on Windows, WebKitGTK on Linux | User already has Python 3.11 + knows it; zero new toolchain; PyInstaller packaging is familiar |
+| Packaging (win) | PyInstaller `--onedir` (per-user, no admin) | Inno Setup wrapper later if we want a classic installer |
+| Packaging (linux) | PyInstaller onedir + systemd-less launcher script (WebKitGTK still required — same as Tauri would be) | |
+| Tray | `pystray` | Close-to-tray, menu |
+| App auto-update | Manual "check + redownload" first; auto-update of the app itself deferred | |
 | UI | **React 18 + TypeScript + Vite + Tailwind + shadcn/ui** | Professional, polished UI is a web problem; shadcn = speed + consistency |
 | i18n | `react-i18next` — EN (default) + PT-BR, toggle in Settings | Persisted in `config.json` |
-| Packaging (win) | NSIS installer, per-user, no admin | `HKCU\...\Run` for autostart |
-| Packaging (linux) | **AppImage** (bundles WebKitGTK) | Zero system deps, any modern distro |
-| App auto-update | `tauri-plugin-updater` | Same channel as releases |
+| Autostart | `HKCU\...\Run` (win) / XDG autostart .desktop (linux) | Per-user, no admin |
 | CI | GitHub Actions matrix: windows-latest, ubuntu-latest | Build + test per OS |
-| Rust tests | `cargo test` + `wiremock` for GitHub API | |
+| Backend tests | `pytest` (Python: bridge, updater, process manager) | |
 | UI tests | Vitest + Testing Library; e2e wizard: Playwright | |
 
-Rejected: Electron (RAM/disk footprint), Go+Wails (smaller desktop ecosystem).
+Rejected: Electron (RAM/disk footprint), Tauri/Rust (new 350MB+ toolchain for the user), Go+Wails (smaller desktop ecosystem).
 
 ## 2. Install layout (per-user, no admin)
 
@@ -72,7 +74,7 @@ the app's validated editor (P4). App state and service config stay separate on p
 - Wizard asks backend: **CUDA 13 / CUDA 12 / Vulkan / CPU**. Auto-detect via
   `nvidia-smi` (driver version → max CUDA toolkit) and preselect.
 - Asset name resolution lives in **TS** (`src/lib/assetResolver.ts`) — the wizard needs it to
-  show "what will be downloaded" before downloading. Rust only does download/verify/swap.
+  show "what will be downloaded" before downloading. Python only does download/verify/swap.
   Pure functions, tested against real nightly fixtures (27 tests). Key policies:
   - fallback chain: same backend+family+major → same family, any major → other family, right major
   - `hardMajor: true` flips tier order (requested CUDA major wins over family) — for users with
@@ -84,10 +86,11 @@ the app's validated editor (P4). App state and service config stay separate on p
 - Automatic on app start (toast if newer available) **and** manual "Check for updates" button.
 - Both llama-swap and llama.cpp checked independently.
 
-## 4. Process manager (Rust core)
+## 4. Process manager (Python core)
 
-- Spawn llama-swap with piped stdio; stream lines to UI via Tauri events (terminal view).
-- Windows: `CREATE_NO_WINDOW` (no console popup).
+- Spawn llama-swap with piped stdio (`subprocess`); stream lines to UI via pywebview
+  `evaluate_js` / events (terminal view).
+- Windows: `CREATE_NO_WINDOW` flag (no console popup).
 - **Conflict detection before start**: if port responds → dialog:
   **Adopt** (find PID, take over management without killing) / **Stop & Take Over** / **Cancel**.
 - Liveness + structured status via **HTTP polling of llama-swap's own API** on `:{port}`
@@ -97,7 +100,7 @@ the app's validated editor (P4). App state and service config stay separate on p
 ## 5. UX decisions (all confirmed)
 
 - Per-user install, no admin (both OSes)
-- Linux target: any modern distro via AppImage; no PPA/deb/flatpak in MVP
+- Linux target: any modern distro via PyInstaller onedir (WebKitGTK required — same as Tauri would be); no PPA/deb/flatpak in MVP
 - macOS: future phase
 - User pins a `b####` build (nightly model); update check suggests newer
 - Configurable llama-swap port, default 8085
@@ -114,13 +117,13 @@ the app's validated editor (P4). App state and service config stay separate on p
 
 | Phase | Scope | Acceptance criteria |
 |---|---|---|
-| **P0** | Scaffold (Tauri+Vite+React+Tailwind+shadcn), i18n EN/PT, first-run wizard: detect OS/arch, auto-detect CUDA via `nvidia-smi`, backend choice (CUDA13/12/Vulkan/CPU), install dir (default per-OS), writes `config.json` | Fresh machine → wizard completes → valid `config.json` on disk. Tests: config schema (Rust + TS) |
+| **P0** | Scaffold (pywebview+Vite+React+Tailwind+shadcn), i18n EN/PT, first-run wizard: detect OS/arch, auto-detect CUDA via `nvidia-smi`, backend choice (CUDA13/12/Vulkan/CPU), install dir (default per-OS), writes `config.json` | Fresh machine → wizard completes → valid `config.json` on disk. Tests: config schema (Python + TS) |
 | **P1** | llama-swap install + update check + atomic update + rollback + existing-process detection | Update on a running install: checksum verified, old version in backups, rollback restores. Wiremock tests for GitHub API |
 | **P2** | llama.cpp nightly discovery + install + update | Highest `b####` with matching asset discovered (resolver done, 27 tests); install produces runnable `llama-cli` |
 | **P3** | Start/stop llama-swap, terminal log view (ring buffer + file rotation), status panel via API polling | Start → status flips to running within 3s of API response; Stop → clean exit code surfaced; kill app → no orphan process |
 | **P4** | `llama-swap.json` editor with validation + apply/reload | Invalid JSON shows field errors before save; apply triggers reload without restart if supported |
 | **P5** | Settings (port, language, auto-start L1/L2, check-on-start, close-to-tray), tray icon, onboarding polish | Each setting persists and takes effect; autostart entries created/removed correctly on both OSes |
-| **P6** | Packaging: NSIS + AppImage, tauri-plugin-updater, CI matrix, README/docs | Installers run on clean VM/container; updater finds next release |
+| **P6** | Packaging: PyInstaller (win onedir + linux), launcher scripts, CI matrix, README/docs | Packaged app runs on clean VM/container; updater finds next release |
 
 ## 7. Not doing (MVP)
 
@@ -132,16 +135,13 @@ the app's validated editor (P4). App state and service config stay separate on p
 
 All system access (fs read/write, process spawn/kill, downloads, tray, autostart) goes through
 one `bridge` interface in TS. Today it's a **browser stub** (in-memory, shows JSON in UI);
-when Rust lands it becomes the Tauri implementation — same 5 functions. This keeps P1–P4
-100% TS-testable and makes the shell swappable (Tauri gnu / Electron / Wails) a small change.
-
-Rust toolchain decision deferred: when the Tauri shell lands, use the **`gnu`** toolchain
-(x86_64-pc-windows-gnu, ~350MB, no MSVC Build Tools). P1–P4 don't need any of it.
+when the Python shell lands it becomes the pywebview implementation — same 5 functions.
+This keeps P1–P4 100% TS-testable and makes the shell swappable a small change.
 
 ## 9. Repo layout (target)
 
 ```
-src-tauri/            # Rust core: config, updater, process manager, asset resolver
+backend/              # Python: bridge impl, updater, process manager (pytest-tested)
 src/                  # React UI
   components/  i18n/  hooks/  lib/
 docs/                 # user docs (EN)
