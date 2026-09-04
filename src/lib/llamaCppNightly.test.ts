@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { afterEach, describe, expect, it } from 'vitest'
-import { assetMeta, checkNightly, parseBuild, requestFromConfig } from './llamaCppNightly'
+import { assetMeta, checkNightly, companionAsset, parseBuild, requestFromConfig } from './llamaCppNightly'
 
 // Real b10816 release payload (captured 2026-09-04) — subset of the 27 real
 // assets with real sizes + digests, plus the non-binary assets to prove
@@ -123,6 +123,25 @@ describe('checkNightly', () => {
     }
   })
 
+  it('config-driven flow: plain build resolved + companion DLLs attached', async () => {
+    const url = await serve([[V040, B10816, B10814]])
+    const req = requestFromConfig({ backend: 'cuda', cudaMajor: 13, cudaFamily: 'cudart' }, 'win', 'x64')
+    const check = await checkNightly(req, 30, url)
+    if (check.latest?.resolution.status === 'ok') {
+      expect(check.latest.build.tag).toBe('b10816')
+      expect(check.latest.resolution.asset.name).toBe('llama-b10816-bin-win-cuda-13.3-x64.zip')
+      const build = check.builds.find((x) => x.info.tag === 'b10816')!
+      expect(companionAsset(build, check.latest!.resolution.asset)?.name).toBe(
+        'cudart-llama-bin-win-cuda-13.3-x64.zip',
+      )
+      expect(assetMeta(build, 'cudart-llama-bin-win-cuda-13.3-x64.zip')?.sha256).toBe(
+        '1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e',
+      )
+    } else {
+      expect.fail('expected an ok resolution')
+    }
+  })
+
   it('skips newer builds that lack the combo (walks newest→oldest)', async () => {
     const url = await serve([[V040, B10816, B10814]])
     const check = await checkNightly({ os: 'win', arch: 'x64', backend: 'rocm' }, 30, url)
@@ -162,11 +181,45 @@ describe('checkNightly', () => {
   })
 })
 
+describe('companionAsset', () => {
+  const build = parseBuild(B10816)!
+  const primary = (name: string) => build.info.assets.find((x) => x.name === name)!
+
+  it('finds the CUDA DLLs bundle for a win CUDA plain build', () => {
+    const comp = companionAsset(build, primary('llama-b10816-bin-win-cuda-13.3-x64.zip'))
+    expect(comp?.name).toBe('cudart-llama-bin-win-cuda-13.3-x64.zip')
+  })
+
+  it('matches the exact CUDA version', () => {
+    const comp = companionAsset(build, primary('llama-b10816-bin-win-cuda-12.4-x64.zip'))
+    expect(comp?.name).toBe('cudart-llama-bin-win-cuda-12.4-x64.zip')
+  })
+
+  it('no companion for non-cuda or non-win builds', () => {
+    expect(companionAsset(build, primary('llama-b10816-bin-win-cpu-x64.zip'))).toBeNull()
+    expect(companionAsset(build, primary('llama-b10816-bin-win-vulkan-x64.zip'))).toBeNull()
+    expect(companionAsset(build, primary('llama-b10816-bin-ubuntu-x64.tar.gz'))).toBeNull()
+  })
+
+  it('no companion when the DLLs bundle is absent from the build', () => {
+    const sparse = parseBuild({
+      tag_name: 'b1',
+      assets: [{ name: 'llama-b1-bin-win-cuda-13.3-x64.zip', size: 1000, browser_download_url: 'x' }],
+    })!
+    expect(companionAsset(sparse, sparse.info.assets[0])).toBeNull()
+  })
+})
+
 describe('requestFromConfig', () => {
   it('marks the wizard CUDA-major choice as a hard constraint', () => {
     const req = requestFromConfig({ backend: 'cuda', cudaMajor: 13, cudaFamily: 'cudart' }, 'win', 'x64')
     expect(req.hardMajor).toBe(true)
     expect(req.cudaMajor).toBe(13)
+  })
+
+  it('resolves Windows CUDA with the plain build as primary (DLLs come as companion)', () => {
+    const req = requestFromConfig({ backend: 'cuda', cudaMajor: 13, cudaFamily: 'cudart' }, 'win', 'x64')
+    expect(req.family).toBe('plain')
   })
 
   it('no hard constraint for non-cuda backends', () => {

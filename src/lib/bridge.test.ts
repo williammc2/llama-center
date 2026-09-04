@@ -37,7 +37,7 @@ describe('bridge — lazy shell resolution', () => {
             calls.push('save_config')
             return { path: 'C:\\fake\\config.json' }
           },
-          download_and_stage: async (_component: string, _url: string, _sha: string | null) => {
+          download_and_stage: async (_component: string, _url: string, _sha: string | null, _into?: string) => {
             calls.push('download_and_stage')
             return { staging: 'C:\\fake\\staging' }
           },

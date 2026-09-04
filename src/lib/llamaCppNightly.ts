@@ -15,7 +15,7 @@
  * download URL + SHA-256. The download/verify/swap bytes go through Python
  * (updater.py), mirroring llamaSwapRelease.ts.
  */
-import { parseAssets, resolveLatest, type BuildInfo, type LatestResult, type ResolveRequest } from './assetResolver'
+import { parseAssets, resolveLatest, type BuildInfo, type LatestResult, type ParsedAsset, type ResolveRequest } from './assetResolver'
 
 export const DEFAULT_RELEASES_URL = 'https://api.github.com/repos/ggml-org/llama.cpp/releases'
 
@@ -76,6 +76,30 @@ export function assetMeta(build: ParsedBuild, assetName: string): AssetMeta | nu
 }
 
 /**
+ * Windows CUDA builds ship as TWO assets (verified against b10816):
+ *   - the plain build (`llama-b####-bin-win-cuda-<ver>-x64.zip`) — all the
+ *     binaries, NO CUDA runtime DLLs;
+ *   - the `cudart-...` zip — ONLY the CUDA runtime DLLs (cudart, cuBLAS,
+ *     cuBLASLt), no executables.
+ * Both must be installed side by side. This returns the companion DLLs asset
+ * for a resolved plain CUDA build; null for everything else (Linux/macOS ship
+ * self-contained, and non-CUDA backends have no DLLs bundle).
+ */
+export function companionAsset(build: ParsedBuild, primary: ParsedAsset): ParsedAsset | null {
+  if (primary.os !== 'win' || primary.backend !== 'cuda' || !primary.version) return null
+  return (
+    build.info.assets.find(
+      (a) =>
+        a.family === 'cudart' &&
+        a.backend === 'cuda' &&
+        a.os === 'win' &&
+        a.arch === primary.arch &&
+        a.version === primary.version,
+    ) ?? null
+  )
+}
+
+/**
  * Fetch the newest `count` nightly builds and resolve the best one for `req`.
  * Pages the releases API (100/page) until `count` b#### builds are collected
  * or the API runs dry. `fetchImpl` is injectable for tests.
@@ -115,7 +139,11 @@ export function requestFromConfig(
     arch,
     backend: cfg.backend,
     cudaMajor: cfg.cudaMajor,
-    family: cfg.cudaFamily,
+    // Windows CUDA: the plain build (binaries) is the primary asset — the
+    // cudart zip is ONLY the runtime DLLs and is attached as a companion
+    // (see companionAsset). Resolving with family=cudart would pick the
+    // DLLs zip as the "build" and install no executables at all.
+    family: os === 'win' && cfg.backend === 'cuda' ? 'plain' : cfg.cudaFamily,
     // The wizard's CUDA-major choice is a hard constraint (e.g. an RTX 5090
     // that needs CUDA 13 must not silently get cudart-12.4).
     hardMajor: cfg.backend === 'cuda' && cfg.cudaMajor != null,

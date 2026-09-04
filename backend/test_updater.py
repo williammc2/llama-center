@@ -138,6 +138,18 @@ class TestExtract:
         updater.extract(archive, dest)
         assert not (dest / "old.txt").exists()
 
+    def test_merge_extract_into_existing_dir(self, server, tmp_path):
+        """Windows CUDA: the DLLs zip is merged into the binaries' dir."""
+        archive = tmp_path / "flat.zip"
+        archive.write_bytes(server["files"]["flat.zip"])
+        dest = tmp_path / "staging"
+        dest.mkdir()
+        (dest / "existing.txt").write_text("keep me")
+        out = updater.extract(archive, dest, merge=True)
+        assert out == dest
+        assert (dest / "existing.txt").read_text() == "keep me"
+        assert (dest / "llama-swap.exe").read_bytes() == b"EXE-PAYLOAD-V1"
+
     def test_unsupported_type(self, tmp_path):
         p = tmp_path / "x.rar"
         p.write_bytes(b"")

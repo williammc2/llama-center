@@ -19,8 +19,10 @@ export interface Bridge {
   /** Host detection: OS, arch, CUDA hint, offered backends. */
   getDetection(): Promise<Detection>
   /** Download a release asset for a component ("llama-swap" | "llama-cpp"),
-   *  verify SHA-256, extract to staging. Returns the payload directory. */
-  downloadAndStage(component: string, url: string, sha256: string | null): Promise<string>
+   *  verify SHA-256, extract to staging. Returns the payload directory.
+   *  With `into`, the archive is merged into that directory (second asset,
+   *  e.g. the Windows CUDA DLLs zip). */
+  downloadAndStage(component: string, url: string, sha256: string | null, into?: string): Promise<string>
   /** Swap staging into the component's live dir (previous install → backups).
    *  Returns the backup dir name, or null on a first install. */
   swapComponent(component: string): Promise<string | null>
@@ -39,7 +41,12 @@ interface PywebviewApi {
   get_detection(): Promise<Detection>
   get_config(): Promise<Record<string, unknown> | null | { error: string }>
   save_config(raw: Record<string, unknown>): Promise<{ path?: string; error?: string }>
-  download_and_stage(component: string, url: string, sha256: string | null): Promise<{ staging?: string; error?: string }>
+  download_and_stage(
+    component: string,
+    url: string,
+    sha256: string | null,
+    into?: string,
+  ): Promise<{ staging?: string; error?: string }>
   swap_component(component: string): Promise<{ backup?: string | null; error?: string }>
   rollback_component(component: string): Promise<{ rolledBack?: boolean; error?: string }>
   list_component_backups(component: string): Promise<string[]>
@@ -72,8 +79,8 @@ const pywebview: Bridge = {
     if (res.error) throw new Error(res.error)
     return res.path!
   },
-  async downloadAndStage(component, url, sha256) {
-    const res = await window.pywebview!.api.download_and_stage(component, url, sha256)
+  async downloadAndStage(component, url, sha256, into) {
+    const res = await window.pywebview!.api.download_and_stage(component, url, sha256, into)
     if (res.error) throw new Error(res.error)
     return res.staging!
   },

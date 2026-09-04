@@ -94,17 +94,24 @@ class Api:
             return cfg.llama_cpp_installed
         return None
 
-    def download_and_stage(self, component: str, url: str, sha256: str | None = None) -> dict:
+    def download_and_stage(
+        self, component: str, url: str, sha256: str | None = None, into: str | None = None
+    ) -> dict:
         """Download a release asset, verify SHA-256, extract to staging.
 
-        Returns {staging: <content dir>} or {error}.
+        With `into` set, the archive is merged INTO that directory (no wipe) —
+        used for a second asset (e.g. the Windows CUDA DLLs zip). Returns
+        {staging: <content dir>} or {error}.
         """
         try:
             d = self._dirs(component)
             name = url.rsplit("/", 1)[-1].split("?")[0] or component
             archive = d["downloads"] / name
             updater.download(url, archive, sha256)
-            content = updater.extract(archive, d["staging"])
+            if into:
+                content = updater.extract(archive, Path(into), merge=True)
+            else:
+                content = updater.extract(archive, d["staging"])
             return {"staging": str(content)}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
