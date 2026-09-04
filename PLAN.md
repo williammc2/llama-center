@@ -71,8 +71,14 @@ the app's validated editor (P4). App state and service config stay separate on p
   `{os}-{backend}` (cuda-12.x / cuda-13.x / vulkan / cpu)
 - Wizard asks backend: **CUDA 13 / CUDA 12 / Vulkan / CPU**. Auto-detect via
   `nvidia-smi` (driver version → max CUDA toolkit) and preselect.
-- Asset name resolution lives in one Rust module with unit tests per (os, backend, arch) combo.
-  This is the highest edge-case surface in the project. @reviewer: focus here.
+- Asset name resolution lives in **TS** (`src/lib/assetResolver.ts`) — the wizard needs it to
+  show "what will be downloaded" before downloading. Rust only does download/verify/swap.
+  Pure functions, tested against real nightly fixtures (27 tests). Key policies:
+  - fallback chain: same backend+family+major → same family, any major → other family, right major
+  - `hardMajor: true` flips tier order (requested CUDA major wins over family) — for users with
+    a hard driver constraint (e.g. RTX 5090 needs CUDA 13)
+  - sycl: `syclPrecision` fp16 (default) / fp32 — Settings toggle, not a wizard option (P5 polish)
+  - `no-asset` is a first-class outcome with `available[]` (e.g. Linux+CUDA, win-x64+opencl)
 
 ### Update checks
 - Automatic on app start (toast if newer available) **and** manual "Check for updates" button.
@@ -110,7 +116,7 @@ the app's validated editor (P4). App state and service config stay separate on p
 |---|---|---|
 | **P0** | Scaffold (Tauri+Vite+React+Tailwind+shadcn), i18n EN/PT, first-run wizard: detect OS/arch, auto-detect CUDA via `nvidia-smi`, backend choice (CUDA13/12/Vulkan/CPU), install dir (default per-OS), writes `config.json` | Fresh machine → wizard completes → valid `config.json` on disk. Tests: config schema (Rust + TS) |
 | **P1** | llama-swap install + update check + atomic update + rollback + existing-process detection | Update on a running install: checksum verified, old version in backups, rollback restores. Wiremock tests for GitHub API |
-| **P2** | llama.cpp nightly resolver + install + update | Given (os, backend, arch) → correct asset URL; table-driven unit tests ≥ 12 combos; install produces runnable `llama-cli` |
+| **P2** | llama.cpp nightly discovery + install + update | Highest `b####` with matching asset discovered (resolver done, 27 tests); install produces runnable `llama-cli` |
 | **P3** | Start/stop llama-swap, terminal log view (ring buffer + file rotation), status panel via API polling | Start → status flips to running within 3s of API response; Stop → clean exit code surfaced; kill app → no orphan process |
 | **P4** | `llama-swap.json` editor with validation + apply/reload | Invalid JSON shows field errors before save; apply triggers reload without restart if supported |
 | **P5** | Settings (port, language, auto-start L1/L2, check-on-start, close-to-tray), tray icon, onboarding polish | Each setting persists and takes effect; autostart entries created/removed correctly on both OSes |

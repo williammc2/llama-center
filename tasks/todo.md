@@ -18,8 +18,8 @@
 - [ ] Existing-process detection (port probe → Adopt / Stop & Take Over / Cancel)
 
 ## P2 — llama.cpp resolver + install (owner: @builder, review: @reviewer)
-- [ ] Nightly resolver: highest `b####` with matching `{os}-{backend}` asset
-- [ ] Table-driven unit tests ≥ 12 (os, backend, arch) combos
+- [x] Nightly resolver (TS, `src/lib/assetResolver.ts`) — 27 tests vs real b10814 fixture
+- [ ] Nightly discovery: highest `b####` with matching `{os}-{backend}` asset (calls resolver)
 - [ ] Install/update/rollback (same atomic flow as P1)
 
 ## P3 — Run + logs + status (owner: @builder)
@@ -32,7 +32,7 @@
 - [ ] `llama-swap.json` editor: validation, field errors, apply/reload
 
 ## P5 — Settings + tray (owner: @builder)
-- [ ] Settings: port, language, auto-start (app / llama-swap), check-on-start, close-to-tray
+- [ ] Settings: port, language, auto-start (app / llama-swap), check-on-start, close-to-tray, sycl precision (fp16/fp32)
 - [ ] Tray icon + menu; autostart entries (HKCU Run / XDG desktop file)
 - [ ] Onboarding polish
 
