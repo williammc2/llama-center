@@ -1,23 +1,53 @@
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Wizard } from './components/Wizard'
-import { detectFromNavigator } from './lib/detect'
-import { parseConfig, type AppConfig } from './lib/config'
+import { bridge } from './lib/bridge'
+import type { AppConfig } from './lib/config'
+import type { Detection } from './lib/detect'
 
-const CONFIG_KEY = 'llama-center:config'
-
-function loadConfig(): AppConfig | null {
-  try {
-    const raw = localStorage.getItem(CONFIG_KEY)
-    if (!raw) return null
-    return parseConfig(JSON.parse(raw))
-  } catch {
-    return null
-  }
-}
+type Ready =
+  | { status: 'loading' }
+  | { status: 'ready'; cfg: AppConfig | null; detection: Detection }
 
 export default function App() {
-  const detection = useMemo(() => detectFromNavigator(navigator), [])
-  const cfg = loadConfig()
+  const [state, setState] = useState<Ready>({ status: 'loading' })
+
+  useEffect(() => {
+    let alive = true
+    // pywebview injects the API asynchronously — wait for it when present,
+    // but never hang (browser mode resolves immediately).
+    const waitForApi = async () => {
+      const started = Date.now()
+      while (window.pywebview?.api === undefined && Date.now() - started < 3000) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    }
+    ;(async () => {
+      await waitForApi()
+      try {
+        const [cfg, detection] = await Promise.all([bridge.getConfig(), bridge.getDetection()])
+        if (alive) setState({ status: 'ready', cfg, detection })
+      } catch (e) {
+        // Corrupt config: show the wizard with a notice instead of crashing.
+        if (!alive) return
+        const detection = await bridge.getDetection().catch(() => null)
+        if (detection) setState({ status: 'ready', cfg: null, detection })
+        console.error(e)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  if (state.status === 'loading') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-500">
+        <p className="text-sm">Loading…</p>
+      </main>
+    )
+  }
+
+  const { cfg, detection } = state
 
   if (cfg?.firstRunDone) {
     return (
@@ -47,7 +77,7 @@ export default function App() {
       <Wizard
         detection={detection}
         onSaved={() => {
-          // Re-read to reflect the saved config.
+          // Re-read from the bridge to reflect the saved config.
           window.location.reload()
         }}
       />
