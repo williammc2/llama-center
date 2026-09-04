@@ -11,6 +11,7 @@ type Ready =
 
 export default function App() {
   const [state, setState] = useState<Ready>({ status: 'loading' })
+  const [reconfiguring, setReconfiguring] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -50,23 +51,27 @@ export default function App() {
 
   const { cfg, detection } = state
 
-  if (cfg?.firstRunDone) {
+  const showWizard = reconfiguring || !cfg?.firstRunDone
+
+  if (showWizard) {
     return (
-      <main className="min-h-screen bg-neutral-950 px-4 py-12 text-neutral-200">
-        <Home cfg={cfg} detection={detection} />
+      <main className="flex min-h-screen items-start justify-center bg-neutral-950 px-4 py-12 text-neutral-200">
+        <Wizard
+          detection={detection}
+          initial={cfg ?? undefined}
+          onSaved={() => {
+            // Re-read from the bridge to reflect the saved config.
+            window.location.reload()
+          }}
+          onBack={reconfiguring && cfg ? () => setReconfiguring(false) : undefined}
+        />
       </main>
     )
   }
 
   return (
-    <main className="flex min-h-screen items-start justify-center bg-neutral-950 px-4 py-12 text-neutral-200">
-      <Wizard
-        detection={detection}
-        onSaved={() => {
-          // Re-read from the bridge to reflect the saved config.
-          window.location.reload()
-        }}
-      />
+    <main className="min-h-screen bg-neutral-950 px-4 py-12 text-neutral-200">
+      <Home cfg={cfg} detection={detection} onReconfigure={() => setReconfiguring(true)} />
     </main>
   )
 }

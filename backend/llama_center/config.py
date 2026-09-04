@@ -58,6 +58,20 @@ def default_install_dir() -> str:
     return str(Path(base) / "llama-center")
 
 
+def normalize_install_dir(s: str) -> str:
+    """Expand `~` and env vars (%VAR% on Windows, $VAR on POSIX) and normalize.
+
+    The wizard pre-fills `%LOCALAPPDATA%\\llama-center` verbatim; without this
+    expansion Python treats it as a *relative* path and installs into the CWD.
+    """
+    if not s:
+        return s
+    s = os.path.expanduser(s)
+    if os.name == "nt":
+        s = os.path.expandvars(s)
+    return os.path.normpath(s)
+
+
 def config_path() -> Path:
     """Where config.json lives — ALWAYS the default per-user root.
 
@@ -115,6 +129,7 @@ def parse_config(raw: object) -> AppConfig:
     install_dir = raw.get("install_dir", "")
     if not isinstance(install_dir, str):
         raise ConfigError(f"config: install_dir must be a string, got {install_dir!r}")
+    install_dir = normalize_install_dir(install_dir)
 
     pin = raw.get("llama_cpp_pin")
     if pin is not None and not isinstance(pin, str):

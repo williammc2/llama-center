@@ -5,6 +5,8 @@ Design note: config.json ALWAYS lives at the default per-user root
 redirect the root by monkeypatching LOCALAPPDATA / XDG_DATA_HOME.
 """
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -69,6 +71,24 @@ class TestParseConfig:
         cfg = parse_config({"version": 1, "bogus": 42, "backend": "vulkan"})
         assert cfg.backend == "vulkan"
         assert not hasattr(cfg, "bogus")
+
+    def test_install_dir_expands_env_vars(self, home):
+        # The wizard pre-fills `%LOCALAPPDATA%\\llama-center` verbatim — the
+        # relative-path footgun is that Python would install into the CWD.
+        if os.name == "nt":
+            raw = "%LOCALAPPDATA%\\custom"
+            expected = home / "local" / "custom"
+        else:
+            raw = "$XDG_DATA_HOME/custom"
+            expected = home / "xdg" / "custom"
+        cfg = parse_config({"version": 1, "install_dir": raw})
+        assert cfg.install_dir == os.path.normpath(str(expected))
+        assert os.path.isabs(cfg.install_dir)
+
+    def test_install_dir_expands_tilde(self):
+        cfg = parse_config({"version": 1, "install_dir": "~/llama-center"})
+        assert cfg.install_dir == os.path.normpath(str(Path.home() / "llama-center"))
+        assert os.path.isabs(cfg.install_dir)
 
     def test_unknown_backend_raises(self):
         with pytest.raises(ConfigError, match="backend"):
