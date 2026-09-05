@@ -384,9 +384,10 @@ class TestAppUpdate:
         if os.name == "nt":
             monkeypatch.setattr("os.startfile", lambda x: launched.append(x), raising=False)
         else:
+            _real_popen = subprocess.Popen
             def _fake_popen(args, **kwargs):
                 launched.append(args[1] if len(args) > 1 else args[0])
-                return subprocess.Popen(["true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return _real_popen(["true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             monkeypatch.setattr("subprocess.Popen", _fake_popen)
 
         res = api.download_and_launch_installer(f"http://127.0.0.1:{port}/installer.exe")
