@@ -51,7 +51,10 @@ jobs:
       - run: pyinstaller llama-center.spec --noconfirm
       - name: Build installer (Inno Setup)
         if: matrix.os == 'windows-latest'
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\llama-center.iss'
+        # Version is single-sourced from package.json — pass it to ISCC.
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$v installer\llama-center.iss
       - uses: actions/upload-artifact@v4
         with:
           name: llama-center-${{ matrix.os }}

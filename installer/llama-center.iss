@@ -1,9 +1,13 @@
 ; Llama Center — Inno Setup script
 ; Build: ISCC installer\llama-center.iss (from project root)
-; Output: dist\llama-center-setup-0.2.6.exe
+;       — or just run build.bat, which passes the version.
+; Output: dist\llama-center-setup-<version>.exe
+;
+; MyAppVersion is NOT defined here: it is passed by build.bat as
+; /DMyAppVersion=<version>, single-sourced from package.json. (Running
+; ISCC directly without /D fails fast — that's the point.)
 
 #define MyAppName "Llama Center"
-#define MyAppVersion "0.2.6"
 #define MyAppPublisher "Llama Center"
 #define MyAppURL "https://github.com/williammc2/llama-center"
 #define MyAppExeName "llama-center.exe"
