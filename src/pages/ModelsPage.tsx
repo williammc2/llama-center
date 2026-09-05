@@ -260,6 +260,7 @@ export function ModelsPage() {
                 <option value="">(none)</option>
                 <option value="draft-mtp">draft-mtp</option>
                 <option value="draft">draft</option>
+                <option value="dflash">dflash</option>
               </select>
             </Field>
             <Field label="n-max">
