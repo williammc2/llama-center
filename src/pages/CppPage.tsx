@@ -217,7 +217,7 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
               disabled={busyAny}
               className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
             >
-              Rollback
+              {(() => { const m = /b(\d+)/.exec(backups[0]); return m ? `Rollback → b${m[1]}` : 'Rollback' })()}
             </button>
           )}
         </div>
