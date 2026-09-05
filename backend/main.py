@@ -48,9 +48,19 @@ import urllib.request
 from dataclasses import asdict
 from pathlib import Path
 
-# Make `llama_center` importable regardless of CWD.
+# Make `llama_center` importable regardless of CWD (dev mode only — when
+# frozen, PyInstaller has already bundled the package into sys.path).
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "backend"))
+FROZEN = getattr(sys, "frozen", False)
+if not FROZEN:
+    sys.path.insert(0, str(REPO_ROOT / "backend"))
+
+
+def dist_dir() -> Path:
+    """Where the built UI lives: repo dist/ in dev, _MEIPASS/dist when frozen."""
+    if FROZEN:
+        return Path(sys._MEIPASS) / "dist"
+    return REPO_ROOT / "dist"
 
 import pystray  # noqa: E402
 import webview  # noqa: E402
@@ -494,7 +504,7 @@ def _maybe_autostart_swap(api: Api) -> None:
 
 
 def main() -> int:
-    dist = REPO_ROOT / "dist" / "index.html"
+    dist = dist_dir() / "index.html"
     if not dist.exists():
         print(f"UI not built — run `pnpm build` first (expected {dist}).", file=sys.stderr)
         return 1

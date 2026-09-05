@@ -49,7 +49,9 @@
 - [x] autoStartLlamaSwap: server starts with the app when the port is free
 - [ ] Onboarding polish
 
-## P6 — Packaging + release (owner: @releaser)
-- [ ] PyInstaller onedir (win) + linux launcher; clean-VM install test
+## P6 — Packaging + release (owner: @builder) ✅ DONE
+- [x] `llama-center.spec` (onedir): UI as data (`sys._MEIPASS`), hidden imports (pywebview backends, pystray), icon from icon.py
+- [x] `build.bat` → `dist\llama-center\llama-center.exe` (verified: window + WebView2 child)
+- [x] CI matrix win/ubuntu (test + package + artifact)
+- [x] README updated (features, packaging, layout)
 - [ ] App self-update: manual check + redownload (auto-update deferred)
-- [ ] CI matrix win/ubuntu; README + user docs (EN)
