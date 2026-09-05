@@ -458,15 +458,8 @@ class Api:
         try:
             updater.download(url, tmp, None, progress=_on_progress)
 
-            if os.name == "nt":
-                # Launch installer after 2s delay (gives time for app to close)
-                subprocess.Popen(
-                    f'cmd /c timeout /t 2 /nobreak >nul && "{tmp}"',
-                    shell=True,
-                    creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-                )
-            else:
-                # Extract tarball and run a background update script
+            if name.endswith(".tar.gz"):
+                # Linux: extract tarball and run a background update script
                 extract_dir = Path(tempfile.gettempdir()) / "llama-center-update"
                 if extract_dir.exists():
                     shutil.rmtree(extract_dir)
@@ -474,7 +467,6 @@ class Api:
                 with tarfile.open(tmp) as tar:
                     tar.extractall(extract_dir)
 
-                # Determine install dir (where the app is running from)
                 install_dir = Path(sys.executable).parent
                 script = extract_dir / "_do_update.sh"
                 script.write_text(
@@ -490,6 +482,13 @@ class Api:
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,
+                )
+            else:
+                # Windows: launch Inno Setup installer after 2s delay
+                subprocess.Popen(
+                    f'cmd /c timeout /t 2 /nobreak >nul && "{tmp}"',
+                    shell=True,
+                    creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
                 )
 
             # Force-quit the app after 1s (lets the installer/script start first)

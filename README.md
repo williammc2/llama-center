@@ -8,6 +8,16 @@ config files or hunts for binaries.
 This file is the canonical project overview — read it first for context on what
 the app is, how it works, and where things live.
 
+## Screenshots
+
+| Server | Models |
+|--------|--------|
+| ![Server page](assets/screen-01.png) | ![Models page](assets/screen-02.png) |
+
+| llama.cpp | Settings |
+|-----------|----------|
+| ![llama.cpp page](assets/screen-03.png) | ![Settings page](assets/screen-04.png) |
+
 ## Features
 
 - **llama-swap** — install, auto-update (stable releases), and rollback. Downloads
