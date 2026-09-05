@@ -49,14 +49,14 @@
 - [x] autoStartLlamaSwap: server starts with the app when the port is free
 - [ ] Onboarding polish
 
-## P7 — Inno Setup installer (Windows) — PLANNED (next)
-- [ ] Bump app version to `0.1.0` (package.json) — Inno needs a version; CI/installer read it from there
-- [ ] `installer/llama-center.iss`: per-user install to `%localappdata%\Programs\llama-center` (no admin),
+## P7 — Inno Setup installer (Windows) — IN PROGRESS
+- [x] Bump app version to `0.1.0` (package.json) — Inno needs a version; CI/installer read it from there
+- [x] `installer/llama-center.iss`: per-user install to `%localappdata%\Programs\llama-center` (no admin),
       source = PyInstaller onedir, Start Menu shortcut (+ optional desktop), uninstaller, "run now" on finish,
       app icon from the generated `build/icon.ico` (spec already generates it)
-- [ ] `build.bat`: after PyInstaller, run `ISCC` → `dist\llama-center-setup-0.1.0.exe`
+- [x] `build.bat`: after PyInstaller, run `ISCC` → `dist\llama-center-setup-0.1.0.exe`
       (clear message if Inno Setup is not installed locally; Inno is free: https://jrsoftware.org/isinfo.php)
-- [ ] CI `package` job (windows): run ISCC (preinstalled on the runner) and upload the installer
+- [x] CI `package` job (windows): run ISCC (preinstalled on the runner) and upload the installer
       as an artifact alongside the onedir folder
 - [ ] Verify: run the setup on the dev machine → installed app works (config at %LOCALAPPDATA%\llama-center,
       tray, autostart pointing at the installed exe), shortcuts exist, uninstall cleans up
