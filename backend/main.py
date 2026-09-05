@@ -41,6 +41,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -162,6 +163,17 @@ class Api:
         except Exception:
             pass
 
+    @staticmethod
+    def _clean_downloads(downloads: Path) -> None:
+        """Remove archives and staging dirs after a successful swap."""
+        if not downloads.is_dir():
+            return
+        for entry in downloads.iterdir():
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+
     def download_and_stage(
         self, component: str, url: str, sha256: str | None = None, into: str | None = None
     ) -> dict:
@@ -193,6 +205,7 @@ class Api:
     def swap_component(self, component: str) -> dict:
         """Swap staging into the live dir; previous install → backups.
 
+        Cleans up downloads/ (archives + staging) on success.
         Returns {backup: <name> | null} or {error}.
         """
         try:
@@ -200,6 +213,7 @@ class Api:
             backup = updater.atomic_swap(
                 d["live"], d["staging"], d["backups"], label=self._installed_label(component), component=component
             )
+            self._clean_downloads(d["downloads"])
             return {"backup": backup}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
