@@ -406,6 +406,21 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
+    def open_path(self, path: str) -> dict:
+        """Open a folder in the OS file explorer."""
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(
+                    ["xdg-open", path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            return {"opened": True}
+        except Exception as e:
+            return {"error": str(e)}
+
     def import_llama_swap_config(self, path: str) -> dict:
         """Parse an existing llama-swap config file (e.g. an old config.yaml)
         into model defs. {models} | {error}."""
