@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Shell } from './components/Shell'
 import { Wizard } from './components/Wizard'
-import { bridge } from './lib/bridge'
+import { bridge, isApiReady } from './lib/bridge'
 import type { AppConfig } from './lib/config'
 import type { Detection } from './lib/detect'
 
@@ -17,17 +17,23 @@ export default function App() {
 
   useEffect(() => {
     let alive = true
-    // pywebview injects the API asynchronously — wait for it when present,
-    // but never hang (browser mode resolves immediately).
+    // pywebview injects the API in two steps (api.js creates an EMPTY
+    // `api: {}`, finish.js fills it in on NavigationCompleted) — wait for
+    // the POPULATED api, not the object, or we exit during the gap and the
+    // first call throws `get_config is not a function` (eternal Loading…
+    // on the first cold boot after a self-update). Browser mode: isApiReady
+    // stays false until the 3s cap, then the no-backend screen appears —
+    // `pnpm dev` is meant to be run without the shell, but a bare browser
+    // tab of the built app used to look alive on the localStorage stub.
     const waitForApi = async () => {
       const started = Date.now()
-      while (window.pywebview?.api === undefined && Date.now() - started < 3000) {
+      while (!isApiReady() && Date.now() - started < 3000) {
         await new Promise((r) => setTimeout(r, 50))
       }
     }
     ;(async () => {
       await waitForApi()
-      if (window.pywebview?.api === undefined) {
+      if (!isApiReady()) {
         // The Python API never arrived — the browser stub would silently
         // take over (localStorage config, fake detection) and the app would
         // look alive while every action fails. Better to say so.

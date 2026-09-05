@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { bridge, isPywebview } from './bridge'
+import { bridge, isApiReady, isPywebview } from './bridge'
 import { DEFAULT_CONFIG } from './config'
 
 const g = globalThis as unknown as {
@@ -125,5 +125,31 @@ describe('bridge — lazy shell resolution', () => {
     expect(await bridge.getConfig()).toBeNull()
     await bridge.saveConfig(DEFAULT_CONFIG)
     expect(store['llama-center:config']).toBeTruthy()
+  })
+})
+
+describe('isApiReady — the two-step injection gap', () => {
+  it('is false when window is absent (bare browser / pnpm dev)', () => {
+    expect(isApiReady()).toBe(false)
+  })
+
+  it('is false for the EMPTY api object (the gap state that broke post-update boot)', () => {
+    // pywebview 6.x: api.js lands first with `api: {}`, finish.js fills the
+    // functions later. The old `api !== undefined` check passed HERE, so the
+    // first get_config() threw `not a function` and the app sat on
+    // "Loading…" forever. isApiReady must reject the empty object.
+    g.window = { pywebview: { api: {} } }
+    expect(isPywebview()).toBe(true) // the old check would have stopped waiting
+    expect(isApiReady()).toBe(false)
+  })
+
+  it('is true once the api is populated', () => {
+    g.window = { pywebview: { api: { get_config: async () => null } } }
+    expect(isApiReady()).toBe(true)
+  })
+
+  it('is false when pywebview exists but api is missing', () => {
+    g.window = { pywebview: {} }
+    expect(isApiReady()).toBe(false)
   })
 })

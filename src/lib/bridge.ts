@@ -135,6 +135,22 @@ export function isPywebview(): boolean {
   return typeof window !== 'undefined' && !!window.pywebview?.api
 }
 
+/**
+ * True when the pywebview API is actually callable — not merely present.
+ *
+ * pywebview 6.x injects the API in TWO steps: `api.js` first creates
+ * `window.pywebview` with an EMPTY `api: {}`, and only later (in the
+ * NavigationCompleted handler) `finish.js` fills in the real functions.
+ * Waiting on `api !== undefined` therefore exits during that gap, and the
+ * first `get_config()` call throws `TypeError: not a function` — the cause
+ * of the eternal "Loading…" after a self-update (first cold boot, when the
+ * gap is widest). A populated check (`typeof get_config === 'function'`)
+ * is immune: the empty object keeps the caller waiting.
+ */
+export function isApiReady(): boolean {
+  return isPywebview() && typeof window.pywebview!.api.get_config === 'function'
+}
+
 const pywebview: Bridge = {
   async getDetection() {
     return window.pywebview!.api.get_detection()
