@@ -513,17 +513,22 @@ def main() -> int:
         hidden="--minimized" in sys.argv,  # login start → straight to the tray
     )
 
-    def on_closing(e) -> None:
-        """Close-to-tray: cancel the close and hide instead of quitting."""
+    def on_closing(window) -> bool:
+        """Close-to-tray: return False to cancel the close (hide instead).
+
+        pywebview 6.x: window.events.closing — set() returns False when any
+        handler returns False, which the GUI backend uses to cancel.
+        """
         try:
             cfg = load_config()
             if cfg.close_to_tray and not _force_quit:
-                e.cancel = True
                 window.hide()
+                return False
         except ConfigError:
             pass
+        return True
 
-    window.closing_event += on_closing
+    window.events.closing += on_closing
 
     start_tray(window, api)
     threading.Thread(target=_maybe_autostart_swap, args=(api,), daemon=True).start()
