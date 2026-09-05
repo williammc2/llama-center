@@ -10,22 +10,22 @@ from llama_center import swapconfig as swc  # noqa: E402
 
 SERVER = r"C:\lc\llama-cpp\llama-server.exe"
 
-# The user's real config (D:\llama-swap\config.yaml) — the reference fixture.
+# Example llama-swap config — the reference parse fixture.
 USER_CONFIG = """\
 healthCheckTimeout: 120
 
 models:
 
-  qwen3.8-27b-uncensored:
+  example-model:
     aliases:
-      - qwen3.8-27b-uncensored
+      - example-model
 
     cmd: >
       D:\\llama-cpp-cuda-13\\llama-server.exe
       --host 127.0.0.1
       --port ${PORT}
-      --model "D:\\models\\qwe3.8-27b\\uncensored\\Qwen3.8-27B-Uncensored-IQ4_XS.gguf"
-      --mmproj "D:\\models\\qwe3.8-27b\\uncensored\\mmproj-Qwen3.8-27B-Uncensored-f16.gguf"
+      --model "D:\\models\\example\\model-q4.gguf"
+      --mmproj "D:\\models\\example\\mmproj-f16.gguf"
       --ctx-size 262144
       --parallel 1
       --gpu-layers 999
@@ -54,8 +54,8 @@ models:
 
 def full_model() -> swc.SwapModel:
     return swc.SwapModel(
-        name="qwen3.8-27b",
-        model="D:\\models\\Qwen3.8-27B.gguf",
+        name="example-model",
+        model="D:\\models\\model.gguf",
         mmproj="D:\\models\\mmproj.gguf",
         draft="D:\\models\\draft.gguf",
         ctx_size=262144,
@@ -70,7 +70,7 @@ class TestBuildCmd:
         cmd = swc.build_cmd(full_model(), SERVER)
         assert cmd == (
             f'{SERVER} --host 127.0.0.1 --port ${{PORT}} '
-            f'--model "D:\\models\\Qwen3.8-27B.gguf" '
+            f'--model "D:\\models\\model.gguf" '
             f'--mmproj "D:\\models\\mmproj.gguf" '
             f'--model-draft "D:\\models\\draft.gguf" '
             f'--ctx-size 262144 --gpu-layers 999 --threads 12 '
@@ -115,8 +115,8 @@ class TestRenderParse:
         back = swc.parse_models(text)
         assert len(back) == 2
         first = back[0]
-        assert first.name == "qwen3.8-27b"
-        assert first.model == "D:\\models\\Qwen3.8-27B.gguf"
+        assert first.name == "example-model"
+        assert first.model == "D:\\models\\model.gguf"
         assert first.mmproj == "D:\\models\\mmproj.gguf"
         assert first.draft == "D:\\models\\draft.gguf"
         assert first.ctx_size == 262144
@@ -131,17 +131,17 @@ class TestRenderParse:
 
         doc = yaml.safe_load(swc.render_yaml([full_model()], SERVER))
         assert doc["healthCheckTimeout"] == 120
-        assert doc["models"]["qwen3.8-27b"]["aliases"] == ["qwen3.8-27b"]
-        assert SERVER in doc["models"]["qwen3.8-27b"]["cmd"]
+        assert doc["models"]["example-model"]["aliases"] == ["example-model"]
+        assert SERVER in doc["models"]["example-model"]["cmd"]
 
     def test_parse_user_config(self):
         """The user's existing config.yaml parses into fields + preserved extras."""
         models = swc.parse_models(USER_CONFIG)
         assert len(models) == 1
         m = models[0]
-        assert m.name == "qwen3.8-27b-uncensored"
-        assert m.model == "D:\\models\\qwe3.8-27b\\uncensored\\Qwen3.8-27B-Uncensored-IQ4_XS.gguf"
-        assert m.mmproj == "D:\\models\\qwe3.8-27b\\uncensored\\mmproj-Qwen3.8-27B-Uncensored-f16.gguf"
+        assert m.name == "example-model"
+        assert m.model == "D:\\models\\example\\model-q4.gguf"
+        assert m.mmproj == "D:\\models\\example\\mmproj-f16.gguf"
         assert m.draft is None
         assert m.ctx_size == 262144
         assert m.gpu_layers == 999

@@ -6,7 +6,7 @@ describe('parseConfig', () => {
     const cfg = parseConfig({
       version: 1,
       firstRunDone: true,
-      installDir: 'C:\\Users\\willi\\AppData\\Local\\llama-center',
+      installDir: 'C:\\Users\\user\\AppData\\Local\\llama-center',
       backend: 'cuda',
       cudaMajor: 13,
       cudaFamily: 'cudart',

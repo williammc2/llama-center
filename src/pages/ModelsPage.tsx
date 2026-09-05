@@ -521,7 +521,7 @@ export function ModelsPage() {
                           className={inputCls}
                           value={m.name}
                           onChange={(e) => set(i, { name: e.target.value })}
-                          placeholder="qwen3.8-27b"
+                          placeholder="my-model"
                         />
                       </Field>
                       <Field label="ctx-size" error={errs.ctxSize}>
