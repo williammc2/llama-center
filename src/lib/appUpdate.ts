@@ -61,12 +61,35 @@ export function compareVersions(a: string, b: string): number {
 /**
  * Fetch the latest release and determine if an update is available.
  * Returns null when up-to-date, or the AppRelease when a newer version exists.
+ *
+ * The fetch is bounded by a timeout: the WebView2 host intercepts every
+ * request (pywebview's WebResourceRequested), and a request that never
+ * settles would leave the UI's "Checking…" state stuck forever — the
+ * button's anti-flood guard (disabled while checking) depends on this
+ * promise actually settling.
  */
+export const CHECK_TIMEOUT_MS = 15000
+
 export async function checkAppUpdate(
   currentVersion: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<AppRelease | null> {
-  const res = await fetchImpl(LATEST_URL, { headers: { accept: 'application/vnd.github+json' } })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS)
+  let res: Response
+  try {
+    res = await fetchImpl(LATEST_URL, {
+      headers: { accept: 'application/vnd.github+json' },
+      signal: controller.signal,
+    })
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error('app update: timed out — check your connection')
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
+  }
   if (!res.ok) throw new Error(`app update: HTTP ${res.status}`)
   const release = parseAppRelease(await res.json())
   if (compareVersions(release.version, currentVersion) > 0) return release

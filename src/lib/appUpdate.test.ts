@@ -125,4 +125,41 @@ describe('checkAppUpdate', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 })
     await expect(checkAppUpdate('0.1.0', fetchMock as typeof fetch)).rejects.toThrow('HTTP 404')
   })
+
+  it('passes an abort signal to fetch', async () => {
+    let seen: AbortSignal | null | undefined
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async (_url: string | URL | Request, init?: RequestInit) => {
+        seen = init?.signal
+        return { ok: true, json: async () => mockRelease }
+      })
+    await checkAppUpdate('0.1.0', fetchMock as typeof fetch)
+    expect(seen).toBeInstanceOf(AbortSignal)
+    expect(seen!.aborted).toBe(false) // cleared, not aborted, on success
+  })
+
+  it('settles with a timeout error when the fetch hangs', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockImplementation((_url: string | URL | Request, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => {
+              const e = new DOMException('aborted', 'AbortError')
+              reject(e)
+            })
+          }),
+        )
+      const p = checkAppUpdate('0.1.0', fetchMock as typeof fetch)
+      const err = p.catch((e) => e)
+      await vi.advanceTimersByTimeAsync(15000)
+      const e = await err
+      expect(e).toBeInstanceOf(Error)
+      expect(String(e)).toContain('timed out')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
