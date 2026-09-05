@@ -21,6 +21,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+CloseApplications=yes
 OutputDir=..\dist
 OutputBaseFilename=llama-center-setup-{#MyAppVersion}
 SetupIconFile=..\build\icon.ico

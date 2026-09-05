@@ -379,19 +379,27 @@ class TestAppUpdate:
         server = _make_server(home)
         port = server.server_address[1]
 
-        # Patch the platform-specific launch call to capture the path
+        # Capture the Popen call (both platforms now use subprocess.Popen)
         launched: list[str] = []
-        if os.name == "nt":
-            monkeypatch.setattr("os.startfile", lambda x: launched.append(x), raising=False)
-        else:
-            _real_popen = subprocess.Popen
-            def _fake_popen(args, **kwargs):
-                launched.append(args[1] if len(args) > 1 else args[0])
-                return _real_popen(["true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            monkeypatch.setattr("subprocess.Popen", _fake_popen)
+        _real_popen = subprocess.Popen
+        def _fake_popen(args, **kwargs):
+            # args can be a string (Windows shell=True) or a list
+            if isinstance(args, str):
+                launched.append(args)
+            else:
+                launched.append(args[0] if args else "")
+            return _real_popen(["true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        monkeypatch.setattr("subprocess.Popen", _fake_popen)
+
+        # Prevent the threading.Timer from closing the app during the test
+        class _NoopTimer:
+            def __init__(self, *a, **kw): pass
+            def start(self): pass
+        monkeypatch.setattr("threading.Timer", _NoopTimer)
 
         res = api.download_and_launch_installer(f"http://127.0.0.1:{port}/installer.exe")
         assert res.get("launched") is True
+        assert res.get("closing") is True
         assert len(launched) == 1
         # The downloaded file should exist in tempdir
         tmp_name = os.path.join(tempfile.gettempdir(), "installer.exe")

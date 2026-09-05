@@ -75,8 +75,12 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
     setInstallingApp(true)
     setAppUpdateMsg(null)
     try {
-      await bridge.downloadAndLaunchInstaller(appUpdate.installerUrl)
-      setAppUpdateMsg({ kind: 'ok', text: 'installer launched — close the app when prompted' })
+      const res = await bridge.downloadAndLaunchInstaller(appUpdate.installerUrl)
+      if (res.closing) {
+        setAppUpdateMsg({ kind: 'ok', text: 'update installed — closing app…' })
+      } else {
+        setAppUpdateMsg({ kind: 'ok', text: 'installer launched' })
+      }
     } catch (e) {
       setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'install failed' })
     } finally {

@@ -44,6 +44,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import urllib.request
 from dataclasses import asdict
@@ -438,11 +439,14 @@ class Api:
     # --- App self-update ---------------------------------------------------
 
     def download_and_launch_installer(self, url: str) -> dict:
-        """Download the app installer to a temp file and launch it.
+        """Download the app installer, launch it with a delay, and close the app.
 
-        The Inno Setup installer overwrites the existing installation.
-        Returns {launched: True} or {error}.
+        Windows: launches the Inno Setup .exe (which overwrites the install).
+        Linux: extracts the .tar.gz and runs a background update script.
+        In both cases the app force-quits after ~1s so files are freed.
+        Returns {launched: True, closing: True} or {error}.
         """
+        import shutil
         import tempfile
 
         name = url.rsplit("/", 1)[-1].split("?")[0] or "llama-center-setup.exe"
@@ -453,15 +457,44 @@ class Api:
 
         try:
             updater.download(url, tmp, None, progress=_on_progress)
+
             if os.name == "nt":
-                os.startfile(str(tmp))  # type: ignore[attr-defined]
-            else:
+                # Launch installer after 2s delay (gives time for app to close)
                 subprocess.Popen(
-                    ["xdg-open", str(tmp)],
+                    f'cmd /c timeout /t 2 /nobreak >nul && "{tmp}"',
+                    shell=True,
+                    creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                )
+            else:
+                # Extract tarball and run a background update script
+                extract_dir = Path(tempfile.gettempdir()) / "llama-center-update"
+                if extract_dir.exists():
+                    shutil.rmtree(extract_dir)
+                extract_dir.mkdir()
+                with tarfile.open(tmp) as tar:
+                    tar.extractall(extract_dir)
+
+                # Determine install dir (where the app is running from)
+                install_dir = Path(sys.executable).parent
+                script = extract_dir / "_do_update.sh"
+                script.write_text(
+                    "#!/bin/bash\n"
+                    "sleep 2\n"
+                    f"rm -rf \"{install_dir}\"\n"
+                    f"cp -r \"{extract_dir}/llama-center\" \"{install_dir}\"\n"
+                    f"\"{install_dir}/llama-center\" &\n",
+                )
+                script.chmod(0o755)
+                subprocess.Popen(
+                    ["bash", str(script)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    start_new_session=True,
                 )
-            return {"launched": True}
+
+            # Force-quit the app after 1s (lets the installer/script start first)
+            threading.Timer(1.0, _force_close_app).start()
+            return {"launched": True, "closing": True}
         except (updater.UpdateError, OSError) as e:
             return {"error": str(e)}
 
@@ -513,6 +546,14 @@ def _tray_quit(window) -> None:
     global _force_quit
     _force_quit = True
     window.destroy()
+
+
+def _force_close_app() -> None:
+    """Force-quit the app (used after launching the update installer)."""
+    global _force_quit
+    _force_quit = True
+    for w in webview.windows:
+        w.destroy()
 
 
 def _tray_check_updates(window) -> None:

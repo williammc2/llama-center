@@ -89,7 +89,7 @@ export interface Bridge {
   /** Open a folder in the OS file explorer. */
   openPath(path: string): Promise<{ opened?: boolean; error?: string }>
   /** Download the app installer and launch it (overwrites existing install). */
-  downloadAndLaunchInstaller(url: string): Promise<{ launched?: boolean; error?: string }>
+  downloadAndLaunchInstaller(url: string): Promise<{ launched?: boolean; closing?: boolean; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
