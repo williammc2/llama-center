@@ -281,13 +281,25 @@ export function ModelsPage() {
         key: `${prefix}-flash`,
         title: 'Flash Attention',
         has: true,
-        summary: g.flashAttention.enabled ? 'on' : 'off',
+        summary: g.flashAttention.enabled == null ? '' : g.flashAttention.enabled ? 'on' : 'off',
         content: (
-          <Toggle
-            label="enabled"
-            checked={g.flashAttention.enabled}
-            onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.flashAttention.enabled = v }) })}
-          />
+          <Field label="mode">
+            <select
+              className={selectCls}
+              value={g.flashAttention.enabled == null ? '' : g.flashAttention.enabled ? 'on' : 'off'}
+              onChange={(e) =>
+                set(i, {
+                  extraFlags: updateFlags(m.extraFlags, (gg) => {
+                    gg.flashAttention.enabled = e.target.value === '' ? undefined : e.target.value === 'on'
+                  }),
+                })
+              }
+            >
+              <option value="">(default)</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </Field>
         ),
       })
     }
@@ -310,9 +322,15 @@ export function ModelsPage() {
                 }
               >
                 <option value="">(default)</option>
+                <option value="f32">f32</option>
                 <option value="f16">f16</option>
+                <option value="bf16">bf16</option>
                 <option value="q8_0">q8_0</option>
+                <option value="q5_1">q5_1</option>
+                <option value="q5_0">q5_0</option>
+                <option value="q4_1">q4_1</option>
                 <option value="q4_0">q4_0</option>
+                <option value="iq4_nl">iq4_nl</option>
               </select>
             </Field>
             <Field label="type-v">
@@ -324,9 +342,15 @@ export function ModelsPage() {
                 }
               >
                 <option value="">(default)</option>
+                <option value="f32">f32</option>
                 <option value="f16">f16</option>
+                <option value="bf16">bf16</option>
                 <option value="q8_0">q8_0</option>
+                <option value="q5_1">q5_1</option>
+                <option value="q5_0">q5_0</option>
+                <option value="q4_1">q4_1</option>
                 <option value="q4_0">q4_0</option>
+                <option value="iq4_nl">iq4_nl</option>
               </select>
             </Field>
           </div>
