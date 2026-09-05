@@ -62,11 +62,9 @@ def dist_dir() -> Path:
         return Path(sys._MEIPASS) / "dist"
     return REPO_ROOT / "dist"
 
-import pystray  # noqa: E402
 import webview  # noqa: E402
 
 from llama_center import autostart  # noqa: E402
-from llama_center.icon import make_icon  # noqa: E402
 from llama_center.config import (  # noqa: E402
     AppConfig,
     ConfigError,
@@ -467,10 +465,19 @@ def _tray_check_updates(window) -> None:
 
 
 def start_tray(window, api: Api) -> None:
-    """Run the tray icon in a daemon thread (pystray blocks)."""
+    """Run the tray icon in a daemon thread (pystray blocks).
+
+    pystray is imported lazily: its __init__ resolves the OS backend at
+    import time, and the Linux Xorg backend opens an X display — which
+    doesn't exist in headless contexts (CI).
+    """
     global _tray_icon
 
     def run() -> None:
+        import pystray  # noqa: PLC0415
+
+        from llama_center.icon import make_icon  # noqa: PLC0415
+
         menu = pystray.Menu(
             pystray.MenuItem("Show", window.show, default=True),
             pystray.MenuItem("Start llama-swap", lambda icon, item: api.start_llama_swap()),
