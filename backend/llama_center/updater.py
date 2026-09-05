@@ -19,9 +19,9 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tarfile
 import time
-import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -251,9 +251,9 @@ def probe_port(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -> bool
 def health_ok(port: int, host: str = "127.0.0.1", timeout: float = 2.0) -> bool:
     """llama-swap liveness: GET /health returns 200 (it answers "OK")."""
     try:
-        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=timeout) as r:
-            return r.status == 200
-    except Exception:
+        r = requests.get(f"http://{host}:{port}/health", timeout=timeout)
+        return r.status_code == 200
+    except requests.RequestException:
         return False
 
 
@@ -273,3 +273,73 @@ def stop_llama_swap() -> bool:
         return r.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def launch_installer(
+    url: str,
+    stop_managed: "callable | None" = None,
+    progress: "callable | None" = None,
+) -> None:
+    """Download the app installer to the system temp dir and launch it.
+
+    Windows: launches the Inno Setup .exe after a 2s delay (the running
+    exe stays deletable; a failed `del` degrades to a leak that the boot
+    sweep picks up). Linux: extracts the .tar.gz and runs a detached
+    `_do_update.sh` that swaps the install dir and starts the new instance.
+
+    `stop_managed` is called right after the download completes — the
+    caller passes a hook that stops the managed llama-swap so this
+    process exits fast (the new instance boots ~2s later and needs the
+    lock, WebView2 profile and files released).
+
+    Raises UpdateError / OSError on download or extraction failure.
+    """
+    import tempfile
+
+    name = url.rsplit("/", 1)[-1].split("?")[0] or "llama-center-setup.exe"
+    tmp = Path(tempfile.gettempdir()) / name
+    download(url, tmp, None, progress=progress)
+
+    if stop_managed is not None:
+        stop_managed()
+
+    if name.endswith(".tar.gz"):
+        # Linux: extract tarball and run a background update script
+        extract_dir = Path(tempfile.gettempdir()) / "llama-center-update"
+        if extract_dir.exists():
+            shutil.rmtree(extract_dir)
+        extract_dir.mkdir()
+        with tarfile.open(tmp) as tar:
+            tar.extractall(extract_dir)
+
+        install_dir = Path(sys.executable).parent
+        script = extract_dir / "_do_update.sh"
+        script.write_text(
+            "#!/bin/bash\n"
+            "sleep 2\n"
+            f"rm -rf \"{install_dir}\"\n"
+            f"cp -r \"{extract_dir}/llama-center\" \"{install_dir}\"\n"
+            f"\"{install_dir}/llama-center\" &\n"
+            # Clean up the tarball + extraction dir once the new
+            # instance is up (the script itself lives in
+            # extract_dir — delay so bash has read it all).
+            f"( sleep 3; rm -rf \"{extract_dir}\" \"{tmp}\" ) &\n",
+        )
+        script.chmod(0o755)
+        subprocess.Popen(
+            ["bash", str(script)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    else:
+        # Windows: launch the Inno Setup installer after a 2s delay,
+        # then delete the installer file (the exe stays deletable
+        # while running; if it is locked the del is a no-op and the
+        # boot sweep picks it up).
+        subprocess.Popen(
+            f'cmd /c timeout /t 2 /nobreak >nul && start "" "{tmp}" && del "{tmp}"',
+            shell=True,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )

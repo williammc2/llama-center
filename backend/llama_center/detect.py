@@ -13,8 +13,10 @@ from typing import Optional
 
 BACKENDS_BY_OS = {
     "win": ("cpu", "cuda", "vulkan", "rocm", "sycl", "opencl", "openvino"),
-    "linux": ("cpu", "vulkan", "rocm", "sycl", "openvino", "opencl"),  # no CUDA assets
-    "macos": ("cpu", "metal"),
+    # Must stay in sync with BACKENDS_BY_OS in src/lib/assetResolver.ts —
+    # verified against b10819: no ubuntu-opencl asset exists.
+    "linux": ("cpu", "vulkan", "rocm", "sycl", "openvino"),  # no CUDA assets
+    "macos": ("cpu",),
 }
 
 

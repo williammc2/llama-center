@@ -112,6 +112,34 @@ describe('bridge — lazy shell resolution', () => {
     )
   })
 
+  it('progress fans out to ALL subscribers (not just the last one)', async () => {
+    // Regression: onDownloadProgress used to be a single slot — the second
+    // subscriber overwrote the first, and an unmount could delete the slot
+    // under the others (the Shell's installer progress died after the first
+    // page switch). Now every active subscriber receives the push.
+    g.window = { pywebview: { api: { get_config: async () => null } } }
+    const a: number[] = []
+    const b: number[] = []
+    const offA = await bridge.onDownloadProgress((p) => a.push(p.received))
+    const offB = await bridge.onDownloadProgress((p) => b.push(p.received))
+
+    const w = g.window as { __lcProgress?: (p: { received: number }) => void }
+    w.__lcProgress!({ received: 1 })
+    expect(a).toEqual([1])
+    expect(b).toEqual([1])
+
+    // Unsubscribing one leaves the other (and the slot) intact.
+    offA()
+    w.__lcProgress!({ received: 2 })
+    expect(a).toEqual([1])
+    expect(b).toEqual([1, 2])
+    expect(typeof w.__lcProgress).toBe('function')
+
+    // Last subscriber leaves → the slot is removed.
+    offB()
+    expect(w.__lcProgress).toBeUndefined()
+  })
+
   it('resolves to the browser stub when the api never arrives', async () => {
     g.window = {}
     const store: Record<string, string> = {}

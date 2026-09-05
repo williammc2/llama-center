@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react'
-import { bridge, type DownloadProgress } from '../lib/bridge'
+import { bridge } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
 import { assetMeta, checkNightly, companionAsset, requestFromConfig, type NightlyCheck } from '../lib/llamaCppNightly'
-
-type Phase =
-  | { status: 'idle' }
-  | { status: 'checking' }
-  | { status: 'downloading'; message?: string }
-  | { status: 'installing'; message?: string }
-  | { status: 'done'; message: string }
-  | { status: 'error'; message: string }
+import { Progress } from '../components/Progress'
+import { useUpdateFlow } from '../lib/useUpdateFlow'
 
 interface CppPageProps {
   cfg: AppConfig
@@ -20,10 +14,7 @@ interface CppPageProps {
 
 export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
   const [cpp, setCpp] = useState<NightlyCheck | null>(null)
-  const [phase, setPhase] = useState<Phase>({ status: 'idle' })
   const [backups, setBackups] = useState<string[]>([])
-  const [progress, setProgress] = useState<DownloadProgress | null>(null)
-  const [busy, setBusy] = useState(false)
 
   const refresh = async () => {
     setBackups(await bridge.listComponentBackups('llama-cpp'))
@@ -43,31 +34,12 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
     }
   }
 
+  const { phase, setPhase, setBusy, busyAny, phaseLine, progress } = useUpdateFlow(check)
+
   useEffect(() => {
     void refresh()
     if (cfg.checkUpdatesOnStart) void check()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Tray "Check for updates" lands on the active page.
-  useEffect(() => {
-    window.__lcCheckUpdates = () => {
-      void check()
-    }
-    return () => {
-      delete window.__lcCheckUpdates
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    let off: (() => void) | undefined
-    void bridge.onDownloadProgress(setProgress).then((u) => {
-      off = u
-    })
-    return () => {
-      off?.()
-    }
   }, [])
 
   const resolution = cpp?.latest?.resolution
@@ -141,10 +113,6 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
       setBusy(false)
     }
   }
-
-  const busyAny = busy || phase.status === 'checking' || phase.status === 'downloading' || phase.status === 'installing'
-  const phaseLine =
-    phase.status === 'downloading' || phase.status === 'installing' ? phase.message ?? null : null
 
   return (
     <>
@@ -249,25 +217,5 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
         )}
       </section>
     </>
-  )
-}
-
-const mb = (n: number) => `${Math.round(n / (1024 * 1024))} MB`
-
-function Progress({ p }: { p: DownloadProgress }) {
-  const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : null
-  return (
-    <div className="mt-3">
-      <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
-        <div
-          className={'h-full bg-sky-500 ' + (pct === null ? 'animate-pulse' : 'transition-[width] duration-200')}
-          style={{ width: pct !== null ? `${pct}%` : '100%' }}
-        />
-      </div>
-      <p className="mt-1 text-xs text-neutral-400">
-        {mb(p.received)}
-        {p.total ? ` / ${mb(p.total)} (${pct}%)` : ''}
-      </p>
-    </div>
   )
 }

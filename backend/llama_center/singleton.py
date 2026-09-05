@@ -32,8 +32,7 @@ if os.name == "nt":
 else:
     import fcntl
 
-# A stable per-user port is not needed: named pipes (win) / unix sockets (linux)
-# are already namespaced by the scope string below.
+from llama_center.paths import data_root
 
 
 def _scope() -> str:
@@ -43,15 +42,6 @@ def _scope() -> str:
 
         return getpass.getuser()
     return str(os.getuid())
-
-
-def _root() -> Path:
-    """Per-user data root (same place config.json lives)."""
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    else:
-        base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(base) / "llama-center"
 
 
 class Singleton:
@@ -93,7 +83,7 @@ class Singleton:
                 return False
             self._mutex = h
             return True
-        path = _root() / f".{self._name}.lock"
+        path = data_root() / f".{self._name}.lock"
         path.parent.mkdir(parents=True, exist_ok=True)
         self._lock_file = open(path, "a+")
         try:
@@ -143,7 +133,7 @@ class Singleton:
         return f"{self._name}-show-{self._scope}"
 
     def _signal_unix(self, cmd: str) -> bool:
-        sock_path = _root() / f".{self._name}.sock"
+        sock_path = data_root() / f".{self._name}.sock"
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             s.settimeout(1.0)
@@ -171,7 +161,6 @@ class Singleton:
         """Block on the named event; each time it's set, dispatch 'show'."""
         k32 = ctypes.windll.kernel32
         k32.CreateEventW.restype = ctypes.c_void_p
-        EVENT_ALL_ACCESS = 0x1F0000
         # CreateEventW(name, bManualReset, bInitialState, name): auto-reset,
         # initially non-signalled.
         h = k32.CreateEventW(None, False, False, self._event_name())
@@ -187,7 +176,7 @@ class Singleton:
             k32.CloseHandle(h)
 
     def _listen_unix(self) -> None:
-        sock_path = _root() / f".{self._name}.sock"
+        sock_path = data_root() / f".{self._name}.sock"
         try:
             sock_path.unlink()
         except FileNotFoundError:

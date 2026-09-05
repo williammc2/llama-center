@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AppConfig } from '../lib/config'
 import type { AppUpdateState } from '../lib/useAppUpdate'
 import { CHECK_TIMEOUT_MS } from '../lib/appUpdate'
+import { Progress } from '../components/Progress'
 
 interface SettingsPageProps {
   cfg: AppConfig
@@ -248,30 +249,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
           </div>
         )}
 
-        {progress && installing && (
-          <div className="mt-3">
-            <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
-              <div
-                className={
-                  'h-full bg-sky-500 ' +
-                  (progress.total === null ? 'animate-pulse' : 'transition-[width] duration-200')
-                }
-                style={{
-                  width:
-                    progress.total !== null
-                      ? `${Math.min(100, Math.round((progress.received / progress.total) * 100))}%`
-                      : '100%',
-                }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-neutral-400">
-              {Math.round(progress.received / (1024 * 1024))} MB
-              {progress.total !== null
-                ? ` / ${Math.round(progress.total / (1024 * 1024))} MB`
-                : ''}
-            </p>
-          </div>
-        )}
+        {progress && installing && <Progress p={progress} />}
 
         {(error || done) && (
           <p className={'mt-3 text-xs ' + (done ? 'text-emerald-600' : 'text-red-400')}>

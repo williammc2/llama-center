@@ -86,6 +86,9 @@ function FlagSection({
   )
 }
 
+/** KV cache quantization options (llama-server --cache-type-k / -v). */
+const KV_TYPES = ['', 'f32', 'f16', 'bf16', 'q8_0', 'q5_1', 'q5_0', 'q4_1', 'q4_0', 'iq4_nl']
+
 /** Number input for a flag value. */
 function NumInput({
   value,
@@ -191,20 +194,13 @@ export function ModelsPage() {
     const has = groupHasValues(g)
     const prefix = `m${i}`
 
-    const sections: {
-      key: string
-      title: string
-      has: boolean
-      summary: string
-      content: ReactNode
-    }[] = []
+    const sections: { key: string; title: string; summary: string; content: ReactNode }[] = []
 
     // Sampling
     if (has.sampling) {
       sections.push({
         key: `${prefix}-sampling`,
         title: 'Sampling',
-        has: true,
         summary: `temp ${g.sampling.temp ?? '—'} · top_p ${g.sampling.topP ?? '—'}`,
         content: (
           <div className="grid grid-cols-4 gap-2">
@@ -245,7 +241,6 @@ export function ModelsPage() {
       sections.push({
         key: `${prefix}-spec`,
         title: 'Speculative Decoding',
-        has: true,
         summary: g.specDecoding.type ?? '',
         content: (
           <div className="grid grid-cols-2 gap-2">
@@ -280,7 +275,6 @@ export function ModelsPage() {
       sections.push({
         key: `${prefix}-flash`,
         title: 'Flash Attention',
-        has: true,
         summary: g.flashAttention.enabled == null ? '' : g.flashAttention.enabled ? 'on' : 'off',
         content: (
           <Field label="mode">
@@ -309,7 +303,6 @@ export function ModelsPage() {
       sections.push({
         key: `${prefix}-kv`,
         title: 'KV Cache',
-        has: true,
         summary: `${g.kvCache.typeK ?? '—'}/${g.kvCache.typeV ?? '—'}`,
         content: (
           <div className="grid grid-cols-2 gap-2">
@@ -321,16 +314,9 @@ export function ModelsPage() {
                   set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeK = e.target.value || undefined }) })
                 }
               >
-                <option value="">(default)</option>
-                <option value="f32">f32</option>
-                <option value="f16">f16</option>
-                <option value="bf16">bf16</option>
-                <option value="q8_0">q8_0</option>
-                <option value="q5_1">q5_1</option>
-                <option value="q5_0">q5_0</option>
-                <option value="q4_1">q4_1</option>
-                <option value="q4_0">q4_0</option>
-                <option value="iq4_nl">iq4_nl</option>
+                {KV_TYPES.map((v) => (
+                  <option key={v} value={v}>{v === '' ? '(default)' : v}</option>
+                ))}
               </select>
             </Field>
             <Field label="type-v">
@@ -341,16 +327,9 @@ export function ModelsPage() {
                   set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeV = e.target.value || undefined }) })
                 }
               >
-                <option value="">(default)</option>
-                <option value="f32">f32</option>
-                <option value="f16">f16</option>
-                <option value="bf16">bf16</option>
-                <option value="q8_0">q8_0</option>
-                <option value="q5_1">q5_1</option>
-                <option value="q5_0">q5_0</option>
-                <option value="q4_1">q4_1</option>
-                <option value="q4_0">q4_0</option>
-                <option value="iq4_nl">iq4_nl</option>
+                {KV_TYPES.map((v) => (
+                  <option key={v} value={v}>{v === '' ? '(default)' : v}</option>
+                ))}
               </select>
             </Field>
           </div>
@@ -363,7 +342,6 @@ export function ModelsPage() {
       sections.push({
         key: `${prefix}-batch`,
         title: 'Batching',
-        has: true,
         summary: `parallel ${g.batching.parallel ?? '—'}`,
         content: (
           <div className="grid grid-cols-2 gap-2">
@@ -389,7 +367,6 @@ export function ModelsPage() {
       sections.push({
         key: `${prefix}-reason`,
         title: 'Reasoning',
-        has: true,
         summary: g.reasoning.effort ?? '',
         content: (
           <div className="space-y-2">
@@ -427,7 +404,6 @@ export function ModelsPage() {
       sections.push({
         key: `${prefix}-image`,
         title: 'Image',
-        has: true,
         summary: `min-tokens ${g.image.minTokens ?? '—'}`,
         content: (
           <Field label="image-min-tokens">

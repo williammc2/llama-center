@@ -61,10 +61,10 @@ class TestApi:
 
     def test_save_config_applies_autostart(self, home, monkeypatch):
         """The startWithSystem toggle takes effect at save time, not next launch."""
-        import main as mainmod
+        from llama_center import api as apimod
 
         calls: list[bool] = []
-        monkeypatch.setattr(mainmod.autostart, "apply", lambda enabled: calls.append(enabled))
+        monkeypatch.setattr(apimod.autostart, "apply", lambda enabled: calls.append(enabled))
         assert "path" in Api().save_config(
             {"version": 1, "installDir": str(home / "r"), "startWithSystem": True}
         )

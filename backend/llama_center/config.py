@@ -16,6 +16,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
 
+from llama_center.paths import data_root
+
 BACKENDS = ("cpu", "cuda", "vulkan", "rocm", "sycl", "openvino", "opencl")
 LANGS = ("en", "pt-BR")
 CUDA_FAMILIES = ("cudart", "plain")
@@ -51,12 +53,7 @@ class AppConfig:
 
 def default_install_dir() -> str:
     """Per-OS default install root (per-user, no admin)."""
-    if os.name == "nt":
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        return str(Path(base) / "llama-center")
-    # Linux (and anything POSIX-like): XDG_DATA_HOME, else ~/.local/share
-    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return str(Path(base) / "llama-center")
+    return str(data_root())
 
 
 def normalize_install_dir(s: str) -> str:

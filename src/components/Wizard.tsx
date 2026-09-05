@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import type { Backend } from '../lib/assetResolver'
-import { resolve } from '../lib/assetResolver'
 import { bridge } from '../lib/bridge'
 import type { AppConfig, Lang } from '../lib/config'
 import { DEFAULT_CONFIG } from '../lib/config'
@@ -212,27 +211,4 @@ export function Wizard({ detection, initial, onSaved, onBack }: WizardProps) {
       </div>
     </div>
   )
-}
-
-/**
- * Preview of what the resolver will actually download for the current
- * selection — shown after the wizard so the user sees the real asset name
- * before any bytes move. Returns null until a nightly's assets are fetched
- * (P1/P2), so the wizard never blocks on the network.
- */
-export function resolvePreview(
-  assets: Parameters<typeof resolve>[0],
-  cfg: AppConfig,
-  os: 'win' | 'linux' | 'macos',
-  arch: 'x64' | 'arm64',
-): { assetName: string; fellBack: boolean; reason?: string } | null {
-  const r = resolve(assets, {
-    os,
-    arch,
-    backend: cfg.backend,
-    cudaMajor: cfg.cudaMajor,
-    family: cfg.cudaFamily,
-  })
-  if (r.status !== 'ok') return null
-  return { assetName: r.asset.name, fellBack: r.fellBack, reason: r.reason }
 }

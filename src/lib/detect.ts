@@ -2,10 +2,9 @@
  * Runtime detection: OS, arch, and CUDA presence.
  *
  * Pure functions taking a small `Env` input so they're testable in Node/vitest
- * without a real browser or Rust. The Tauri shell (P6) calls `detect()` which
- * assembles the Env from Tauri APIs; in a plain browser it falls back to
- * `navigator`. CUDA detection (`nvidia-smi` probe) is done in Rust later —
- * here we just model the result.
+ * without a real browser. The pywebview shell does its own `nvidia-smi` probe
+ * in Python (backend/llama_center/detect.py); in a plain browser this module
+ * falls back to `navigator`.
  */
 import type { Backend } from './assetResolver'
 import { backendsFor } from './assetResolver'

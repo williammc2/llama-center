@@ -4,4 +4,7 @@ pystray>=0.19
 pyinstaller>=6.10
 requests>=2.31
 pyyaml>=6.0
+# Direct import in llama_center/icon.py (transitive via pystray, but we
+# import PIL ourselves — declare it).
+pillow>=10.0
 pytest>=8.0

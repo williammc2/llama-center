@@ -1,16 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { bridge, type DownloadProgress, type SwapStatus } from '../lib/bridge'
+import { bridge, type SwapStatus } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
 import { fetchLatestRelease, pickAsset, type SwapRelease } from '../lib/llamaSwapRelease'
-
-type Phase =
-  | { status: 'idle' }
-  | { status: 'checking' }
-  | { status: 'downloading'; message?: string }
-  | { status: 'installing'; message?: string }
-  | { status: 'done'; message: string }
-  | { status: 'error'; message: string }
+import { Progress } from '../components/Progress'
+import { useUpdateFlow } from '../lib/useUpdateFlow'
 
 interface ServerPageProps {
   cfg: AppConfig
@@ -22,14 +16,11 @@ interface ServerPageProps {
 
 export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageProps) {
   const [latest, setLatest] = useState<SwapRelease | null>(null)
-  const [phase, setPhase] = useState<Phase>({ status: 'idle' })
   const [conflict, setConflict] = useState(false)
   const [backups, setBackups] = useState<string[]>([])
-  const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [logs, setLogs] = useState<string[]>([])
   const [showLogs, setShowLogs] = useState(false)
   const [startConflict, setStartConflict] = useState(false)
-  const [busy, setBusy] = useState(false)
   const showLogsRef = useRef(showLogs)
   showLogsRef.current = showLogs
 
@@ -50,31 +41,12 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
     }
   }
 
+  const { phase, setPhase, setBusy, busyAny, phaseLine, progress } = useUpdateFlow(check)
+
   useEffect(() => {
     void refresh()
     if (cfg.checkUpdatesOnStart) void check()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Tray "Check for updates" lands on the active page.
-  useEffect(() => {
-    window.__lcCheckUpdates = () => {
-      void check()
-    }
-    return () => {
-      delete window.__lcCheckUpdates
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    let off: (() => void) | undefined
-    void bridge.onDownloadProgress(setProgress).then((u) => {
-      off = u
-    })
-    return () => {
-      off?.()
-    }
   }, [])
 
   // Log tail: only while the page is mounted and the terminal is open.
@@ -214,9 +186,6 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
   // --- render ---------------------------------------------------------------
 
   const upToDate = latest !== null && installed !== null && latest.version <= installed
-  const busyAny = busy || phase.status === 'checking' || phase.status === 'downloading' || phase.status === 'installing'
-  const phaseLine =
-    phase.status === 'downloading' || phase.status === 'installing' ? phase.message ?? null : null
 
   return (
     <>
@@ -415,28 +384,6 @@ function ConflictDialog({
           </button>
         </div>
       </div>
-    </div>
-  )
-}
-
-const mb = (n: number) => `${Math.round(n / (1024 * 1024))} MB`
-
-/** Download progress bar — % when the server sent Content-Length, else
- *  an indeterminate (pulsing) bar with the byte count. */
-function Progress({ p }: { p: DownloadProgress }) {
-  const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : null
-  return (
-    <div className="mt-3">
-      <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
-        <div
-          className={'h-full bg-sky-500 ' + (pct === null ? 'animate-pulse' : 'transition-[width] duration-200')}
-          style={{ width: pct !== null ? `${pct}%` : '100%' }}
-        />
-      </div>
-      <p className="mt-1 text-xs text-neutral-400">
-        {mb(p.received)}
-        {p.total ? ` / ${mb(p.total)} (${pct}%)` : ''}
-      </p>
     </div>
   )
 }

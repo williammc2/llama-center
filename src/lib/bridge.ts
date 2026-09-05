@@ -118,7 +118,7 @@ interface PywebviewApi {
   import_llama_swap_config(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
   open_url(url: string): Promise<{ opened?: boolean; error?: string }>
   open_path(path: string): Promise<{ opened?: boolean; error?: string }>
-  download_and_launch_installer(url: string): Promise<{ launched?: boolean; error?: string }>
+  download_and_launch_installer(url: string): Promise<{ launched?: boolean; closing?: boolean; error?: string }>
 }
 
 declare global {
@@ -150,6 +150,17 @@ export function isPywebview(): boolean {
 export function isApiReady(): boolean {
   return isPywebview() && typeof window.pywebview!.api.get_config === 'function'
 }
+
+/**
+ * Download-progress subscribers (Python pushes via `window.__lcProgress`).
+ * A SET, not a single slot: the Shell (app installer), the Server page and
+ * the llama.cpp page all subscribe, and each page unmounts when you navigate
+ * away. A single slot meant the last subscriber to register won — and an
+ * unmount could delete the slot under the others, silently killing the
+ * sidebar's installer progress after the first page switch.
+ */
+const progressSubscribers = new Set<(p: DownloadProgress) => void>()
+let progressWired = false
 
 const pywebview: Bridge = {
   async getDetection() {
@@ -218,12 +229,28 @@ const pywebview: Bridge = {
   async downloadAndLaunchInstaller(url) {
     const res = await window.pywebview!.api.download_and_launch_installer(url)
     if (res.error) throw new Error(res.error)
-    return { launched: res.launched === true }
+    return { launched: res.launched === true, closing: res.closing === true }
   },
   async onDownloadProgress(cb) {
-    window.__lcProgress = cb
+    progressSubscribers.add(cb)
+    if (!progressWired) {
+      progressWired = true
+      window.__lcProgress = (p) => {
+        for (const sub of progressSubscribers) {
+          try {
+            sub(p)
+          } catch {
+            // one broken subscriber must not kill the others
+          }
+        }
+      }
+    }
     return () => {
-      delete window.__lcProgress
+      progressSubscribers.delete(cb)
+      if (progressSubscribers.size === 0) {
+        progressWired = false
+        delete window.__lcProgress
+      }
     }
   },
 }
@@ -232,6 +259,7 @@ const pywebview: Bridge = {
  * Browser stand-in for `pnpm dev` — no Python shell, so config lives in
  * localStorage. Lets the whole UI be developed and tested without the shell.
  */
+const SHELL_ONLY = 'needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)'
 const browser: Bridge = {
   async getDetection() {
     // Reuse the navigator-based detector already in detect.ts.
@@ -254,13 +282,13 @@ const browser: Bridge = {
   // No Python shell in the browser: the update *decision* still works (pure
   // TS), but the bytes need the real fs.
   async downloadAndStage() {
-    throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
+    throw new Error(SHELL_ONLY)
   },
   async swapComponent() {
-    throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
+    throw new Error(SHELL_ONLY)
   },
   async rollbackComponent() {
-    throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
+    throw new Error(SHELL_ONLY)
   },
   async listComponentBackups() {
     return []
@@ -281,13 +309,13 @@ const browser: Bridge = {
     return []
   },
   async saveLlamaSwapConfig() {
-    return { error: 'needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)' }
+    return { error: SHELL_ONLY }
   },
   async getLlamaSwapConfig() {
     return { models: [], path: null }
   },
   async importLlamaSwapConfig() {
-    return { error: 'needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)' }
+    return { error: SHELL_ONLY }
   },
   async openUrl(url) {
     window.open(url, '_blank')
@@ -297,7 +325,7 @@ const browser: Bridge = {
     return { error: 'needs the desktop shell' }
   },
   async downloadAndLaunchInstaller() {
-    throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
+    throw new Error(SHELL_ONLY)
   },
   async onDownloadProgress() {
     return () => {}
