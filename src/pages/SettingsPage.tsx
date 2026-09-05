@@ -69,15 +69,22 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
   const checkRemaining =
     checkStartedAt !== null ? Math.max(0, Math.ceil((checkStartedAt + CHECK_TIMEOUT_MS - Date.now()) / 1000)) : 0
 
+  // Result of the last check, rendered ON the button so every click has
+  // visible feedback — before this, "up to date" was the only signal and a
+  // fast check looked like a dead button.
+  const [checkResult, setCheckResult] = useState<'ok' | 'update' | 'err' | null>(null)
+
   const checkApp = async () => {
     setCheckingApp(true)
     setCheckStartedAt(Date.now())
+    setCheckResult(null)
     setAppUpdateMsg(null)
     try {
       const release = await checkAppUpdate(import.meta.env.VITE_APP_VERSION)
       setAppUpdate(release)
-      if (!release) setAppUpdateMsg({ kind: 'ok', text: 'up to date' })
+      setCheckResult(release ? 'update' : 'ok')
     } catch (e) {
+      setCheckResult('err')
       setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'check failed' })
     } finally {
       setCheckingApp(false)
@@ -244,9 +251,28 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
             type="button"
             onClick={() => void checkApp()}
             disabled={checkingApp || installingApp}
-            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+            className={
+              'rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 ' +
+              (checkingApp
+                ? 'border-neutral-700 text-neutral-300'
+                : checkResult === 'err'
+                  ? 'border-red-800 text-red-300 hover:border-red-600'
+                  : checkResult === 'ok'
+                    ? 'border-emerald-800 text-emerald-300 hover:border-emerald-600'
+                    : checkResult === 'update'
+                      ? 'border-sky-800 text-sky-300 hover:border-sky-600'
+                      : 'border-neutral-700 text-neutral-300 hover:border-neutral-500')
+            }
           >
-            {checkingApp ? `Checking… ${checkRemaining}s` : 'Check for update'}
+            {checkingApp
+              ? `Checking… ${checkRemaining}s`
+              : checkResult === 'update'
+                ? 'Update available'
+                : checkResult === 'ok'
+                  ? 'Up to date'
+                  : checkResult === 'err'
+                    ? 'Check failed — retry'
+                    : 'Check for update'}
           </button>
         </div>
 
