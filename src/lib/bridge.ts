@@ -120,6 +120,8 @@ declare global {
     pywebview?: { api: PywebviewApi }
     /** Set by the pywebview bridge; Python pushes download progress here. */
     __lcProgress?: (p: DownloadProgress) => void
+    /** Set by the active page; the tray "Check for updates" calls it. */
+    __lcCheckUpdates?: () => void
   }
 }
 

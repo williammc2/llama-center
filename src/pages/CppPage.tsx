@@ -49,6 +49,17 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Tray "Check for updates" lands on the active page.
+  useEffect(() => {
+    window.__lcCheckUpdates = () => {
+      void check()
+    }
+    return () => {
+      delete window.__lcCheckUpdates
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     let off: (() => void) | undefined
     void bridge.onDownloadProgress(setProgress).then((u) => {
