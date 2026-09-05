@@ -21,6 +21,24 @@ describe('parseAppRelease', () => {
     expect(rel.publishedAt).toBe('2026-09-05T12:00:00Z')
   })
 
+  it('selects .tar.gz on Linux platform', () => {
+    const origPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform')
+    Object.defineProperty(navigator, 'platform', { value: 'Linux x86_64', configurable: true })
+    try {
+      const raw = {
+        tag_name: 'v0.2.0',
+        assets: [
+          { name: 'llama-center-setup-0.2.0.exe', browser_download_url: 'https://x/setup.exe' },
+          { name: 'llama-center-0.2.0-linux-x86_64.tar.gz', browser_download_url: 'https://x/linux.tar.gz' },
+        ],
+      }
+      const rel = parseAppRelease(raw)
+      expect(rel.installerUrl).toBe('https://x/linux.tar.gz')
+    } finally {
+      if (origPlatform) Object.defineProperty(navigator, 'platform', origPlatform)
+    }
+  })
+
   it('handles missing body and assets', () => {
     const raw = { tag_name: 'v1.0.0', body: null, assets: [] }
     const rel = parseAppRelease(raw)

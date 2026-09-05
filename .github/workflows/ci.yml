@@ -56,11 +56,22 @@ jobs:
         with:
           name: llama-center-${{ matrix.os }}
           path: dist/llama-center
+      - name: Stage installer (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Copy-Item dist/llama-center-setup-*.exe ./
+      - name: Stage installer (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: tar czf llama-center-linux-x86_64.tar.gz -C dist llama-center
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'windows-latest'
         with:
-          name: llama-center-setup
-          path: dist/llama-center-setup-*.exe
+          name: llama-center-setup-win
+          path: llama-center-setup-*.exe
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: llama-center-setup-linux
+          path: llama-center-linux-x86_64.tar.gz
 
   release:
     needs: package
@@ -72,7 +83,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: llama-center-setup
+          name: llama-center-setup-win
+      - uses: actions/download-artifact@v4
+        with:
+          name: llama-center-setup-linux
       - name: Get version
         id: ver
         run: |
@@ -83,4 +97,6 @@ jobs:
           tag_name: v${{ steps.ver.outputs.version }}
           name: v${{ steps.ver.outputs.version }}
           generate_release_notes: true
-          files: dist/llama-center-setup-*.exe
+          files: |
+            llama-center-setup-*.exe
+            llama-center-linux-x86_64.tar.gz

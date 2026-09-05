@@ -30,12 +30,15 @@ export function parseAppRelease(raw: unknown): AppRelease {
   const notes = typeof o.body === 'string' ? o.body : ''
   const publishedAt = typeof o.published_at === 'string' ? o.published_at : null
 
-  // Find the Windows installer asset (.exe)
+  // Find the platform-specific installer asset
+  const platform = typeof navigator !== 'undefined' ? (navigator.platform ?? '') : ''
+  const isWindows = platform === '' || /win/i.test(platform)
+  const ext = isWindows ? '.exe' : '.tar.gz'
   let installerUrl: string | null = null
   const assets = Array.isArray(o.assets) ? (o.assets as Array<Record<string, unknown>>) : []
   for (const a of assets) {
     const name = typeof a.name === 'string' ? a.name : ''
-    if (name.endsWith('.exe') && typeof a.browser_download_url === 'string') {
+    if (name.endsWith(ext) && typeof a.browser_download_url === 'string') {
       installerUrl = a.browser_download_url
       break
     }
