@@ -484,7 +484,11 @@ class Api:
                     "sleep 2\n"
                     f"rm -rf \"{install_dir}\"\n"
                     f"cp -r \"{extract_dir}/llama-center\" \"{install_dir}\"\n"
-                    f"\"{install_dir}/llama-center\" &\n",
+                    f"\"{install_dir}/llama-center\" &\n"
+                    # Clean up the tarball + extraction dir once the new
+                    # instance is up (the script itself lives in
+                    # extract_dir — delay so bash has read it all).
+                    f"( sleep 3; rm -rf \"{extract_dir}\" \"{tmp}\" ) &\n",
                 )
                 script.chmod(0o755)
                 subprocess.Popen(
@@ -494,9 +498,12 @@ class Api:
                     start_new_session=True,
                 )
             else:
-                # Windows: launch Inno Setup installer after 2s delay
+                # Windows: launch the Inno Setup installer after a 2s delay,
+                # then delete the installer file (the exe stays deletable
+                # while running; if it is locked the del is a no-op and the
+                # boot sweep picks it up).
                 subprocess.Popen(
-                    f'cmd /c timeout /t 2 /nobreak >nul && "{tmp}"',
+                    f'cmd /c timeout /t 2 /nobreak >nul && start "" "{tmp}" && del "{tmp}"',
                     shell=True,
                     creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
                 )
@@ -649,6 +656,11 @@ def main() -> int:
     single.wipe_webview_profile()
 
     atexit.register(shutdown_managed)
+
+    # Sweep installers left in %TEMP% by previous self-updates (each one
+    # ~18 MB). Runs off the boot path; the in-flight installer is protected
+    # by age inside the sweep.
+    threading.Thread(target=updater.sweep_stale_installers, daemon=True).start()
 
     api = Api()
     window = webview.create_window(

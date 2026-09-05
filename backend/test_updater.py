@@ -1,9 +1,12 @@
 """Tests for llama_center.updater — real archives served by a local HTTP server."""
 import hashlib
 import io
+import os
 import socket
 import tarfile
+import tempfile
 import threading
+import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -224,6 +227,43 @@ class TestRollback:
     def test_rollback_without_backups(self, tmp_path):
         d = updater.component_dirs(str(tmp_path / "root"))
         assert updater.rollback(d["live"], d["backups"]) is False
+
+
+class TestSweepStaleInstallers:
+    def test_removes_old_keeps_young(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        old = tmp_path / "llama-center-setup-0.2.4.exe"
+        old.write_bytes(b"installer")
+        young = tmp_path / "llama-center-setup-0.2.5.exe"
+        young.write_bytes(b"installer")
+        other = tmp_path / "unrelated.exe"
+        other.write_bytes(b"x")
+        # make `old` older than the 15-min cutoff
+        past = time.time() - 20 * 60
+        os.utime(old, (past, past))
+        removed = updater.sweep_stale_installers()
+        assert removed == 1
+        assert not old.exists()
+        assert young.exists()  # in-flight installer is protected by age
+        assert other.exists()  # only our own installers are swept
+
+    def test_ignores_lock_files_and_dirs(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        old = tmp_path / "llama-center-setup-0.2.4.exe"
+        old.write_bytes(b"installer")
+        past = time.time() - 20 * 60
+        os.utime(old, (past, past))
+        # A file that raises on unlink (locked on Windows) is skipped, not fatal.
+        def _unlink(self, missing_ok=False):
+            raise OSError("locked")
+
+        monkeypatch.setattr(Path, "unlink", _unlink)
+        assert updater.sweep_stale_installers() == 0
+        assert old.exists()
+
+    def test_empty_temp_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+        assert updater.sweep_stale_installers() == 0
 
 
 class TestProbe:

@@ -212,6 +212,33 @@ def rollback(live: Path, backups: Path) -> bool:
     return True
 
 
+def sweep_stale_installers() -> int:
+    """Delete leftover app installers from %TEMP% (or /tmp on POSIX).
+
+    `download_and_launch_installer` downloads the installer to the system
+    temp dir and used to leave it there forever — each self-update
+    accumulated ~18 MB. The in-flight installer is protected by age
+    (anything younger than 15 minutes is assumed to be the one we just
+    launched). Deletion failures are ignored: a locked file means the
+    installer is still running and the next boot sweeps it.
+    """
+    import tempfile
+
+    min_age = 15 * 60  # seconds
+    tmp = Path(tempfile.gettempdir())
+    now = time.time()
+    removed = 0
+    for p in tmp.glob("llama-center-setup-*"):
+        try:
+            if not p.is_file() or now - p.stat().st_mtime < min_age:
+                continue
+            p.unlink()
+            removed += 1
+        except OSError:
+            pass  # locked / vanished — try again next boot
+    return removed
+
+
 def probe_port(port: int, host: str = "127.0.0.1", timeout: float = 1.0) -> bool:
     """True when something accepts a TCP connection on host:port."""
     try:
