@@ -20,6 +20,7 @@ instance blocks on the event; the second instance sets it and exits.
 from __future__ import annotations
 
 import os
+import shutil
 import socket
 import threading
 import time
@@ -262,3 +263,40 @@ def acquire_or_takeover(s: Singleton, timeout: float = 8.0, poll: float = 0.5) -
             return True  # the other instance died — we take over
         time.sleep(poll)
     return False
+
+
+# ---------------------------------------------------------------------- webview2
+def webview_profile_dir() -> Path:
+    """Dedicated WebView2 user-data folder for this app.
+
+    pywebview's default is a *shared* ``%APPDATA%/pywebview`` — every app
+    process (and every pywebview app on the box) points at the same profile.
+    After a self-update the old process tears its WebView2 down asynchronously
+    while the fresh one boots, so two engines race on the same profile
+    (lock files, cache, Singleton) and the new window can come up black.
+    A per-app folder removes the cross-app race; the update race is handled
+    by :func:`wipe_webview_profile` at the next boot.
+    """
+    if os.name == "nt":
+        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "llama-center" / "webview2"
+
+
+def wipe_webview_profile() -> None:
+    """Drop the WebView2 user-data folder so the engine boots from scratch.
+
+    Called on every boot, right before the window is created. Normally the
+    folder is already empty (the previous process tore it down on exit), so
+    this costs ~one stat. After a self-update it removes the profile the
+    dying instance may have left half-closed — the cause of the black
+    first window. Best-effort: a locked file must never block startup.
+    """
+    d = webview_profile_dir()
+    if not d.exists():
+        return
+    try:
+        shutil.rmtree(d, ignore_errors=True)
+    except Exception:
+        pass

@@ -640,6 +640,14 @@ def main() -> int:
         time.sleep(0.3)  # let the first instance process the show before we exit
         return 0
 
+    # Wipe the WebView2 profile before the window exists. Normally a no-op
+    # (the previous instance tore it down on exit); after a self-update it
+    # removes the profile the dying instance left half-closed — the cause of
+    # the black first window. Must run only when we own the lock (above),
+    # or a redundant second launch would delete the first instance's live
+    # profile.
+    single.wipe_webview_profile()
+
     atexit.register(shutdown_managed)
 
     api = Api()
@@ -679,7 +687,7 @@ def main() -> int:
     start_tray(window, api)
     threading.Thread(target=_maybe_autostart_swap, args=(api,), daemon=True).start()
 
-    webview.start()
+    webview.start(storage_path=str(single.webview_profile_dir()))
 
     if _tray_icon is not None:
         try:

@@ -160,3 +160,45 @@ class TestAcquireOrTakeover:
             assert result.get("r") is True
         finally:
             new.release()
+
+
+class TestWebViewProfile:
+    @pytest.fixture
+    def profile_root(self, tmp_path, monkeypatch):
+        """Point the profile helpers at a temp dir (per-OS env var)."""
+        monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        return tmp_path
+
+    def test_profile_dir_is_dedicated(self, profile_root):
+        """Not pywebview's shared %APPDATA%/pywebview — our own folder."""
+        d = S.webview_profile_dir()
+        assert d.name == "webview2"
+        assert d.parent.name == "llama-center"
+        # and it is NOT the pywebview default
+        assert d.name != "pywebview"
+
+    def test_wipe_removes_profile(self, profile_root):
+        d = S.webview_profile_dir()
+        (d / "EBWebView").mkdir(parents=True)
+        (d / "EBWebView" / "lock.file").write_text("stale")
+        S.wipe_webview_profile()
+        assert not d.exists()
+
+    def test_wipe_is_noop_when_missing(self, profile_root):
+        # Must not raise (or create) when the folder doesn't exist yet.
+        S.wipe_webview_profile()
+        assert not S.webview_profile_dir().exists()
+
+    def test_wipe_is_best_effort_on_locks(self, profile_root, monkeypatch):
+        """A stubborn rmtree (locked file) must not block startup."""
+        d = S.webview_profile_dir()
+        d.mkdir(parents=True)
+        import shutil
+
+        def _boom(*a, **kw):
+            raise OSError("locked")
+
+        monkeypatch.setattr(S.shutil, "rmtree", _boom)
+        S.wipe_webview_profile()  # must not raise
+        assert d.exists()
