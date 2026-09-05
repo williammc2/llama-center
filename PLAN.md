@@ -15,10 +15,11 @@ Status: P0 done. Owner: @architect (plan) / @builder (code).
 | P2 llama.cpp install | ✅ DONE | `llamaCppNightly.ts` (releases-list walk newest→oldest, real b10816/b10814 fixtures, hardMajor from wizard choice); updater generalized per-component (`staging-<component>`, backup prefix); Home llama.cpp card (check/install/update/rollback, size shown). vitest 76 + pytest 63 green |
 | P3 run/logs/status | ✅ DONE | `process.py` (spawn piped stdio, CREATE_NO_WINDOW, ring buffer 2000 + rotating file 5MB×3, terminate→kill); Api start/stop/status/logs (`/health` + `/running` model list); Home: Start/Stop, 2s status poll (managed/external/stopped + models), log terminal, start conflict dialog, atexit anti-orphan. vitest 82 + pytest 76 green |
 | P4 models config | ✅ DONE | `swapconfig.py` (models → `cmd` → `llama-swap.yaml`, llama-server path abstracted to the managed llama.cpp; parse/import of existing configs preserves unknown flags in `extra_flags`); Api save/get/import; Home "llama-swap models" card (per-model fields + validation + import from file); start uses `--config` and errors "no-config" clearly. vitest 82 + pytest 96 green |
-| P5 settings/tray/autostart | ⏳ | |
+| UI: sidebar shell (Server/Models/llama.cpp/Settings) | ✅ DONE | `Shell.tsx` (fixed sidebar + one page at a time, no window scrollbar; status dot on Server); pages in `src/pages/` (ServerPage, ModelsPage, CppPage, SettingsPage — port, install dir, toggles, "Change setup"); Home.tsx deleted |
+| P5 settings/tray/autostart | ⏳ | Settings page landed with the shell; tray/autostart wiring still pending |
 | P6 packaging | ⏳ | PyInstaller onedir |
 
-**Next goal:** P5 — Settings (port, language, auto-start L1/L2, check-on-start, close-to-tray), tray icon, onboarding polish. (P4 note: the config is applied on next Start; a live reload endpoint in llama-swap would be a P5+ polish.)
+**Next goal:** P5 (rest) — tray icon + menu, autostart wiring (the Settings toggles already persist), onboarding polish. (P4 note: the config is applied on next Start; a live reload endpoint in llama-swap would be a P5+ polish.)
 
 ## 1. Stack (decided)
 
