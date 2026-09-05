@@ -259,8 +259,9 @@ export function ModelsPage() {
               >
                 <option value="">(none)</option>
                 <option value="draft-mtp">draft-mtp</option>
-                <option value="draft">draft</option>
-                <option value="dflash">dflash</option>
+                <option value="draft-dflash">draft-dflash</option>
+                <option value="draft-eagle3">draft-eagle3</option>
+                <option value="draft-dspark">draft-dspark</option>
               </select>
             </Field>
             <Field label="n-max">
