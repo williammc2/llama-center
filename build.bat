@@ -23,7 +23,7 @@ if "%ISCC%"=="" (
 echo.
 echo Done:
 echo   App:      dist\llama-center\llama-center.exe
-echo   Installer: dist\llama-center-setup-0.2.4.exe
+echo   Installer: dist\llama-center-setup-0.2.5.exe
 goto :eof
 
 :err

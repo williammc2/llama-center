@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { bridge, type DownloadProgress } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
-import { checkAppUpdate, CHECK_TIMEOUT_MS, type AppRelease } from '../lib/appUpdate'
+import type { AppUpdateState } from '../lib/useAppUpdate'
+import { CHECK_TIMEOUT_MS } from '../lib/appUpdate'
 
 interface SettingsPageProps {
   cfg: AppConfig
   onSaveConfig: (next: AppConfig) => Promise<void>
   onReconfigure: () => void
+  /** Shared app-update state (owned by Shell — single check per boot). */
+  update: AppUpdateState
 }
 
 const inputCls =
@@ -39,7 +41,7 @@ function Toggle({
   )
 }
 
-export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageProps) {
+export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: SettingsPageProps) {
   const [port, setPort] = useState(cfg.llamaSwapPort)
   const [installDir, setInstallDir] = useState(cfg.installDir)
   const [checkUpdatesOnStart, setCheckUpdatesOnStart] = useState(cfg.checkUpdatesOnStart)
@@ -49,13 +51,18 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  // App self-update state
-  const [appUpdate, setAppUpdate] = useState<AppRelease | null>(null)
-  const [checkingApp, setCheckingApp] = useState(false)
-  const [checkStartedAt, setCheckStartedAt] = useState<number | null>(null)
-  const [installingApp, setInstallingApp] = useState(false)
-  const [appUpdateMsg, setAppUpdateMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-  const [appProgress, setAppProgress] = useState<DownloadProgress | null>(null)
+  const {
+    version,
+    release,
+    checking,
+    installing,
+    error,
+    done,
+    progress,
+    checkStartedAt,
+    check: checkApp,
+    install: installApp,
+  } = update
 
   // Countdown shown on the button while a check is in flight: the check is
   // bounded (CHECK_TIMEOUT_MS), so the user always sees how much longer it
@@ -68,60 +75,6 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
   }, [checkStartedAt])
   const checkRemaining =
     checkStartedAt !== null ? Math.max(0, Math.ceil((checkStartedAt + CHECK_TIMEOUT_MS - Date.now()) / 1000)) : 0
-
-  // Result of the last check, rendered ON the button so every click has
-  // visible feedback — before this, "up to date" was the only signal and a
-  // fast check looked like a dead button.
-  const [checkResult, setCheckResult] = useState<'ok' | 'update' | 'err' | null>(null)
-
-  const checkApp = async () => {
-    setCheckingApp(true)
-    setCheckStartedAt(Date.now())
-    setCheckResult(null)
-    setAppUpdateMsg(null)
-    try {
-      const release = await checkAppUpdate(import.meta.env.VITE_APP_VERSION)
-      setAppUpdate(release)
-      setCheckResult(release ? 'update' : 'ok')
-    } catch (e) {
-      setCheckResult('err')
-      setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'check failed' })
-    } finally {
-      setCheckingApp(false)
-      setCheckStartedAt(null)
-    }
-  }
-
-  const installApp = async () => {
-    if (!appUpdate?.installerUrl) return
-    setInstallingApp(true)
-    setAppUpdateMsg(null)
-    try {
-      const res = await bridge.downloadAndLaunchInstaller(appUpdate.installerUrl)
-      if (res.closing) {
-        setAppUpdateMsg({ kind: 'ok', text: 'update installed — closing app…' })
-      } else {
-        setAppUpdateMsg({ kind: 'ok', text: 'installer launched' })
-      }
-    } catch (e) {
-      setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'install failed' })
-    } finally {
-      setInstallingApp(false)
-    }
-  }
-
-  // Subscribe to download progress for the app installer
-  useEffect(() => {
-    let off: (() => void) | undefined
-    void bridge.onDownloadProgress((p) => {
-      if (p.component === 'app') setAppProgress(p)
-    }).then((u) => {
-      off = u
-    })
-    return () => {
-      off?.()
-    }
-  }, [])
 
   const dirty =
     port !== cfg.llamaSwapPort ||
@@ -240,93 +193,89 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
         </div>
       </section>
 
-      {/* App self-update */}
+      {/* App self-update — state is shared with the sidebar (one check per boot). */}
       <section className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium text-neutral-200">App version</h3>
-            <p className="font-mono text-xs text-neutral-500">v{import.meta.env.VITE_APP_VERSION}</p>
+            <p className="font-mono text-xs text-neutral-500">v{version}</p>
           </div>
           <button
             type="button"
             onClick={() => void checkApp()}
-            disabled={checkingApp || installingApp}
+            disabled={checking || installing}
             className={
               'rounded-md border px-3 py-1.5 text-sm transition-colors disabled:opacity-50 ' +
-              (checkingApp
+              (checking
                 ? 'border-neutral-700 text-neutral-300'
-                : checkResult === 'err'
-                  ? 'border-red-800 text-red-300 hover:border-red-600'
-                  : checkResult === 'ok'
-                    ? 'border-emerald-800 text-emerald-300 hover:border-emerald-600'
-                    : checkResult === 'update'
-                      ? 'border-sky-800 text-sky-300 hover:border-sky-600'
-                      : 'border-neutral-700 text-neutral-300 hover:border-neutral-500')
+                : release
+                  ? 'border-sky-800 text-sky-300 hover:border-sky-600'
+                  : error
+                    ? 'border-red-800 text-red-300 hover:border-red-600'
+                    : 'border-neutral-700 text-neutral-300 hover:border-neutral-500')
             }
           >
-            {checkingApp
+            {checking
               ? `Checking… ${checkRemaining}s`
-              : checkResult === 'update'
+              : release
                 ? 'Update available'
-                : checkResult === 'ok'
-                  ? 'Up to date'
-                  : checkResult === 'err'
-                    ? 'Check failed — retry'
-                    : 'Check for update'}
+                : error
+                  ? 'Check failed — retry'
+                  : 'Check for update'}
           </button>
         </div>
 
-        {appUpdate && (
+        {release && (
           <div className="mt-3 rounded-md border border-sky-900 bg-sky-950/30 p-3">
-            <p className="text-sm font-medium text-sky-300">v{appUpdate.version} available</p>
-            {appUpdate.notes && (
+            <p className="text-sm font-medium text-sky-300">v{release.version} available</p>
+            {release.notes && (
               <div className="mt-2 max-h-32 overflow-auto rounded bg-neutral-950/60 p-2">
                 <pre className="whitespace-pre-wrap font-sans text-xs text-neutral-400">
-                  {appUpdate.notes}
+                  {release.notes}
                 </pre>
               </div>
             )}
-            {appUpdate.installerUrl && (
+            {release.installerUrl && (
               <button
                 type="button"
                 onClick={() => void installApp()}
-                disabled={installingApp}
+                disabled={installing}
                 className="mt-3 rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-wait disabled:opacity-60"
               >
-                {installingApp ? 'Downloading…' : 'Download & install'}
+                {installing ? 'Downloading…' : 'Download & install'}
               </button>
             )}
           </div>
         )}
 
-        {appProgress && installingApp && (
+        {progress && installing && (
           <div className="mt-3">
             <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
               <div
                 className={
                   'h-full bg-sky-500 ' +
-                  (appProgress.total === null ? 'animate-pulse' : 'transition-[width] duration-200')
+                  (progress.total === null ? 'animate-pulse' : 'transition-[width] duration-200')
                 }
                 style={{
                   width:
-                    appProgress.total !== null
-                      ? `${Math.min(100, Math.round((appProgress.received / appProgress.total) * 100))}%`
+                    progress.total !== null
+                      ? `${Math.min(100, Math.round((progress.received / progress.total) * 100))}%`
                       : '100%',
                 }}
               />
             </div>
             <p className="mt-1 text-xs text-neutral-400">
-              {Math.round(appProgress.received / (1024 * 1024))} MB
-              {appProgress.total !== null
-                ? ` / ${Math.round(appProgress.total / (1024 * 1024))} MB`
+              {Math.round(progress.received / (1024 * 1024))} MB
+              {progress.total !== null
+                ? ` / ${Math.round(progress.total / (1024 * 1024))} MB`
                 : ''}
             </p>
           </div>
         )}
 
-        {appUpdateMsg && (
-          <p className={'mt-3 text-xs ' + (appUpdateMsg.kind === 'ok' ? 'text-emerald-600' : 'text-red-400')}>
-            {appUpdateMsg.text}
+        {(error || done) && (
+          <p className={'mt-3 text-xs ' + (done ? 'text-emerald-600' : 'text-red-400')}>
+            {done ? 'update installed — closing app…' : error}
           </p>
         )}
       </section>
