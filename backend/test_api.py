@@ -205,9 +205,15 @@ class TestRunSurface:
         finally:
             s.close()
 
-    def test_stop_without_process(self, home):
+    def test_stop_without_process(self, home, monkeypatch):
+        # Mock the by-name killer: without it, the real `taskkill /IM
+        # llama-swap.exe /F` would murder the developer's own local
+        # llama-swap (tests must not touch host state).
+        monkeypatch.setattr(
+            "llama_center.updater.stop_llama_swap", lambda: False, raising=False
+        )
         res = Api().stop_llama_swap()
-        assert res["stopped"] in (True, False)  # by-name pkill result
+        assert res["stopped"] is False
         assert res["exitCode"] is None
 
 

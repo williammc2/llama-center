@@ -117,3 +117,46 @@ class TestShowSignal:
         finally:
             first.release()
             second.release()
+
+
+class TestAcquireOrTakeover:
+    def test_free_lock_acquires_immediately(self, root):
+        s = S.Singleton(name=_unique_name())
+        try:
+            assert S.acquire_or_takeover(s) is True
+        finally:
+            s.release()
+
+    def test_live_instance_refuses(self, root):
+        """A first instance that answers 'show' → caller is redundant."""
+        name = _unique_name()
+        first = S.Singleton(name=name)
+        second = S.Singleton(name=name)
+        try:
+            assert first.acquire() is True
+            first.start_listening(lambda cmd: None)  # answers the event
+            time.sleep(0.3)
+            assert S.acquire_or_takeover(second, timeout=3.0, poll=0.2) is False
+        finally:
+            first.release()
+            second.release()
+
+    def test_dying_instance_is_taken_over(self, root):
+        """The update scenario: the old instance holds the lock but dies
+        without answering → the new instance takes over."""
+        name = _unique_name()
+        old = S.Singleton(name=name)
+        new = S.Singleton(name=name)
+        assert old.acquire() is True  # old holds the lock, no listener
+        old.release()  # ...and dies before the first signal lands
+
+        result = {}
+        def attempt():
+            result["r"] = S.acquire_or_takeover(new, timeout=5.0, poll=0.2)
+        t = threading.Thread(target=attempt)
+        t.start()
+        t.join(6)
+        try:
+            assert result.get("r") is True
+        finally:
+            new.release()

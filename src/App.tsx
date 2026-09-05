@@ -8,6 +8,7 @@ import type { Detection } from './lib/detect'
 type Ready =
   | { status: 'loading' }
   | { status: 'ready'; cfg: AppConfig | null; detection: Detection }
+  | { status: 'no-backend'; error: string }
 
 export default function App() {
   const [state, setState] = useState<Ready>({ status: 'loading' })
@@ -26,6 +27,14 @@ export default function App() {
     }
     ;(async () => {
       await waitForApi()
+      if (window.pywebview?.api === undefined) {
+        // The Python API never arrived — the browser stub would silently
+        // take over (localStorage config, fake detection) and the app would
+        // look alive while every action fails. Better to say so.
+        if (!alive) return
+        setState({ status: 'no-backend', error: 'The Python backend never responded. Close and reopen the app.' })
+        return
+      }
       try {
         const [cfg, detection] = await Promise.all([bridge.getConfig(), bridge.getDetection()])
         if (!alive) return
@@ -53,6 +62,25 @@ export default function App() {
     return (
       <main className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-500">
         <p className="text-sm">Loading…</p>
+      </main>
+    )
+  }
+
+  if (state.status === 'no-backend') {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 text-neutral-500">
+        <div className="text-center">
+          <p className="text-2xl">⚠️</p>
+          <p className="mt-3 text-sm font-medium text-neutral-300">Backend not responding</p>
+          <p className="mt-1 max-w-xs text-xs text-neutral-500">{state.error}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-4 rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:border-neutral-500"
+          >
+            Retry
+          </button>
+        </div>
       </main>
     )
   }

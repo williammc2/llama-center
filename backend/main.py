@@ -460,6 +460,14 @@ class Api:
         try:
             updater.download(url, tmp, None, progress=_on_progress)
 
+            # Stop the managed llama-swap NOW (not at atexit) so this process
+            # exits fast. The installer launches the new instance ~2s after
+            # this returns; we must be gone by then (lock + WebView2 folder +
+            # files released) or the fresh instance can boot half-dead.
+            if _managed is not None and _managed.running:
+                _managed.stop(timeout=5)
+                _managed.flush()
+
             if name.endswith(".tar.gz"):
                 # Linux: extract tarball and run a background update script
                 extract_dir = Path(tempfile.gettempdir()) / "llama-center-update"
@@ -622,10 +630,14 @@ def main() -> int:
     # Start shortcut while the app is hidden — fails to acquire, asks the first
     # instance to surface its window, and exits. Without this, the shortcut
     # spawns a whole second app.
+    #
+    # acquire_or_takeover tolerates a *dying* previous instance: after an app
+    # self-update the old process may still be shutting down (stopping
+    # llama-swap) when the installer launches the new one. If it dies without
+    # answering, we take over its lock instead of exiting into nothing.
     lock = single.Singleton()
-    if not lock.acquire():
-        lock.signal("show")
-        time.sleep(0.3)  # let the first instance process the message before we exit
+    if not single.acquire_or_takeover(lock):
+        time.sleep(0.3)  # let the first instance process the show before we exit
         return 0
 
     atexit.register(shutdown_managed)

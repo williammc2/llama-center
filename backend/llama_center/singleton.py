@@ -238,3 +238,27 @@ class Singleton:
             except Exception:
                 pass
             self._lock_file = None
+
+
+def acquire_or_takeover(s: Singleton, timeout: float = 8.0, poll: float = 0.5) -> bool:
+    """Acquire the lock, tolerating a *dying* previous instance.
+
+    Returns True when `s` now owns the lock. Returns False when another
+    *live* instance answered the 'show' request (the caller is redundant
+    and should exit) or when the lock is still held after `timeout`.
+
+    Why: after an app self-update, the old process can still be shutting
+    down (stopping llama-swap) when the installer launches the new one.
+    It holds the lock but may not answer — without takeover, the fresh
+    instance would exit into nothing and the user would see no window.
+    """
+    if s.acquire():
+        return True
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if s.signal("show", timeout=0.5):
+            return False  # someone answered — we are redundant
+        if s.acquire():
+            return True  # the other instance died — we take over
+        time.sleep(poll)
+    return False
