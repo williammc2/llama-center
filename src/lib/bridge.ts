@@ -88,6 +88,8 @@ export interface Bridge {
   openUrl(url: string): Promise<{ opened?: boolean; error?: string }>
   /** Open a folder in the OS file explorer. */
   openPath(path: string): Promise<{ opened?: boolean; error?: string }>
+  /** Download the app installer and launch it (overwrites existing install). */
+  downloadAndLaunchInstaller(url: string): Promise<{ launched?: boolean; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -116,6 +118,7 @@ interface PywebviewApi {
   import_llama_swap_config(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
   open_url(url: string): Promise<{ opened?: boolean; error?: string }>
   open_path(path: string): Promise<{ opened?: boolean; error?: string }>
+  download_and_launch_installer(url: string): Promise<{ launched?: boolean; error?: string }>
 }
 
 declare global {
@@ -196,6 +199,11 @@ const pywebview: Bridge = {
   async openPath(path) {
     return window.pywebview!.api.open_path(path)
   },
+  async downloadAndLaunchInstaller(url) {
+    const res = await window.pywebview!.api.download_and_launch_installer(url)
+    if (res.error) throw new Error(res.error)
+    return { launched: res.launched === true }
+  },
   async onDownloadProgress(cb) {
     window.__lcProgress = cb
     return () => {
@@ -271,6 +279,9 @@ const browser: Bridge = {
   },
   async openPath() {
     return { error: 'needs the desktop shell' }
+  },
+  async downloadAndLaunchInstaller() {
+    throw new Error('needs the desktop shell — run via dev.bat (pnpm dev has no filesystem)')
   },
   async onDownloadProgress() {
     return () => {}
