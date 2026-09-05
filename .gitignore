@@ -26,3 +26,6 @@ dist-ssr
 backend/.venv/
 __pycache__/
 .pytest_cache/
+
+# PyInstaller work dir (output goes to dist/, already ignored)
+build/

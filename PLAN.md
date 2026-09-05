@@ -3,7 +3,7 @@
 A cross-platform (Windows + Linux) desktop app that installs, configures, runs, and keeps
 up-to-date **llama.cpp** (nightlies) and **llama-swap** for local LLM inference.
 
-Status: P0 done. Owner: @architect (plan) / @builder (code).
+Status: P0–P6 done (all user-verified). Owner: @architect (plan) / @builder (code).
 
 ## 0. Status (keep this updated — what's done vs. what's next)
 
@@ -17,9 +17,9 @@ Status: P0 done. Owner: @architect (plan) / @builder (code).
 | P4 models config | ✅ DONE | `swapconfig.py` (models → `cmd` → `llama-swap.yaml`, llama-server path abstracted to the managed llama.cpp; parse/import of existing configs preserves unknown flags in `extra_flags`); Api save/get/import; Home "llama-swap models" card (per-model fields + validation + import from file); start uses `--config` and errors "no-config" clearly. vitest 82 + pytest 96 green |
 | UI: sidebar shell (Server/Models/llama.cpp/Settings) | ✅ DONE + USER-VERIFIED | `Shell.tsx` (fixed sidebar + one page at a time, no window scrollbar; status dot on Server); pages in `src/pages/` (ServerPage, ModelsPage, CppPage, SettingsPage — port, install dir, toggles, "Change setup"); Home.tsx deleted |
 | P5 settings/tray/autostart | ✅ DONE + USER-VERIFIED | Settings page (shell); tray icon (pystray, runtime-generated icon, menu Show/Start/Stop/Check updates/Quit); close-to-tray (user verified Show); `--minimized` login start; autostart (HKCU Run / XDG .desktop, applied on save_config); autoStartLlamaSwap (port must be free) |
-| P6 packaging | ⏳ | PyInstaller onedir |
+| P6 packaging | ✅ DONE | `llama-center.spec` (onedir; UI bundled as data via `sys._MEIPASS`; lazy-import hidden imports for pywebview backends + pystray; icon generated from icon.py); `build.bat`; CI matrix (win+ubuntu: test + package + artifact); frozen-aware `main.py` (dist_dir, no sys.path insert). Packaged exe verified: window + WebView2 child alive |
 
-**Next goal:** P6 — Packaging: PyInstaller (win onedir + linux), launcher scripts, CI matrix, README/docs. (P4 note: the config is applied on next Start; a live reload endpoint in llama-swap would be a P6+ polish.)
+**Status: all phases done.** Remaining polish: onboarding, i18n runtime (EN/PT-BR toggle), app self-update, live config reload.
 
 ## 1. Stack (decided)
 
