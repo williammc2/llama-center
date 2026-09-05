@@ -37,7 +37,12 @@ def set_windows(enabled: bool) -> None:
     import winreg
 
     cmd = launch_cmd() + " --minimized"
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+    # The Run key may not exist on a fresh machine (CI runners) — create it.
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE)
+    except FileNotFoundError:
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, _RUN_KEY)
+    with key:
         if enabled:
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, cmd)
         else:

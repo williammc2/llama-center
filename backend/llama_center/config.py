@@ -68,8 +68,8 @@ def normalize_install_dir(s: str) -> str:
     if not s:
         return s
     s = os.path.expanduser(s)
-    if os.name == "nt":
-        s = os.path.expandvars(s)
+    # %VAR% on Windows, $VAR on POSIX (expandvars handles each on its OS).
+    s = os.path.expandvars(s)
     return os.path.normpath(s)
 
 
