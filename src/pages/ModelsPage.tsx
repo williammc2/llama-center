@@ -1,5 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { bridge, type SwapModelDef } from '../lib/bridge'
+import {
+  parseFlagGroups,
+  serializeFlagGroups,
+  groupHasValues,
+  type FlagGroups,
+} from '../lib/flagGroups'
 
 const emptyModel = (): SwapModelDef => ({
   name: '',
@@ -26,6 +32,9 @@ function modelErrors(m: SwapModelDef, all: SwapModelDef[]): Record<string, strin
 const inputCls =
   'w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-sky-600 focus:outline-none'
 
+const selectCls =
+  'rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-sky-600 focus:outline-none'
+
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
     <label className="block">
@@ -38,9 +47,94 @@ function Field({ label, error, children }: { label: string; error?: string; chil
   )
 }
 
-/** The llama-swap models editor: one collapsible box per model. The app
- *  renders the `cmd` line (llama-server path abstracted to the managed
- *  llama.cpp); extra flags are appended verbatim. */
+/** Update a specific field in the flag groups and serialize back. */
+function updateFlags(extraFlags: string, update: (g: FlagGroups) => void): string {
+  const g = parseFlagGroups(extraFlags)
+  update(g)
+  return serializeFlagGroups(g)
+}
+
+/** A collapsible flag section with a title and summary. */
+function FlagSection({
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string
+  summary: string
+  open: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  return (
+    <div className="rounded border border-neutral-800 bg-neutral-900/40">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between px-3 py-1.5 text-left"
+      >
+        <span className="flex items-center gap-2">
+          <span className="font-mono text-[10px] text-neutral-500">{open ? '▾' : '▸'}</span>
+          <span className="text-xs font-medium text-neutral-300">{title}</span>
+          {summary && <span className="font-mono text-[10px] text-neutral-500">{summary}</span>}
+        </span>
+      </button>
+      {open && <div className="px-3 pb-2 pt-1">{children}</div>}
+    </div>
+  )
+}
+
+/** Number input for a flag value. */
+function NumInput({
+  value,
+  onChange,
+  step = 1,
+  placeholder,
+}: {
+  value: number | undefined
+  onChange: (v: number | undefined) => void
+  step?: number
+  placeholder?: string
+}) {
+  return (
+    <input
+      className={inputCls}
+      type="number"
+      step={step}
+      value={value ?? ''}
+      placeholder={placeholder ?? ''}
+      onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
+    />
+  )
+}
+
+/** Toggle (checkbox) for a boolean flag. */
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean | undefined
+  onChange: (v: boolean | undefined) => void
+}) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-neutral-300">
+      <input
+        type="checkbox"
+        checked={checked ?? false}
+        onChange={(e) => onChange(e.target.checked ? true : undefined)}
+        className="h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-950"
+      />
+      {label}
+    </label>
+  )
+}
+
+/** The llama-swap models editor: one collapsible box per model with
+ *  structured flag sections replacing the raw extra_flags textarea. */
 export function ModelsPage() {
   const [models, setModels] = useState<SwapModelDef[]>([emptyModel()])
   const [loaded, setLoaded] = useState(false)
@@ -48,6 +142,7 @@ export function ModelsPage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [open, setOpen] = useState<Record<number, boolean>>({})
+  const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     void bridge
@@ -57,6 +152,7 @@ export function ModelsPage() {
   }, [])
 
   const toggle = (i: number) => setOpen((o) => ({ ...o, [i]: !o[i] }))
+  const toggleSection = (key: string) => setSectionOpen((o) => ({ ...o, [key]: !o[key] }))
 
   const set = (i: number, patch: Partial<SwapModelDef>) =>
     setModels((ms) => ms.map((m, j) => (j === i ? { ...m, ...patch } : m)))
@@ -89,12 +185,274 @@ export function ModelsPage() {
     }
   }
 
+  /** Render the structured flag sections for a model. */
+  function renderFlagSections(i: number, m: SwapModelDef) {
+    const g = parseFlagGroups(m.extraFlags)
+    const has = groupHasValues(g)
+    const prefix = `m${i}`
+
+    const sections: {
+      key: string
+      title: string
+      has: boolean
+      summary: string
+      content: ReactNode
+    }[] = []
+
+    // Sampling
+    if (has.sampling) {
+      sections.push({
+        key: `${prefix}-sampling`,
+        title: 'Sampling',
+        has: true,
+        summary: `temp ${g.sampling.temp ?? '—'} · top_p ${g.sampling.topP ?? '—'}`,
+        content: (
+          <div className="grid grid-cols-4 gap-2">
+            <Field label="temp">
+              <NumInput
+                value={g.sampling.temp}
+                step={0.1}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.temp = v }) })}
+              />
+            </Field>
+            <Field label="top_p">
+              <NumInput
+                value={g.sampling.topP}
+                step={0.05}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.topP = v }) })}
+              />
+            </Field>
+            <Field label="top_k">
+              <NumInput
+                value={g.sampling.topK}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.topK = v }) })}
+              />
+            </Field>
+            <Field label="min_p">
+              <NumInput
+                value={g.sampling.minP}
+                step={0.05}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.minP = v }) })}
+              />
+            </Field>
+          </div>
+        ),
+      })
+    }
+
+    // Speculative Decoding
+    if (has.specDecoding) {
+      sections.push({
+        key: `${prefix}-spec`,
+        title: 'Speculative Decoding',
+        has: true,
+        summary: g.specDecoding.type ?? '',
+        content: (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="type">
+              <select
+                className={selectCls}
+                value={g.specDecoding.type ?? ''}
+                onChange={(e) =>
+                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.specDecoding.type = e.target.value || undefined }) })
+                }
+              >
+                <option value="">(none)</option>
+                <option value="draft-mtp">draft-mtp</option>
+                <option value="draft">draft</option>
+              </select>
+            </Field>
+            <Field label="n-max">
+              <NumInput
+                value={g.specDecoding.nMax}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.specDecoding.nMax = v }) })}
+              />
+            </Field>
+          </div>
+        ),
+      })
+    }
+
+    // Flash Attention
+    if (has.flashAttention) {
+      sections.push({
+        key: `${prefix}-flash`,
+        title: 'Flash Attention',
+        has: true,
+        summary: g.flashAttention.enabled ? 'on' : 'off',
+        content: (
+          <Toggle
+            label="enabled"
+            checked={g.flashAttention.enabled}
+            onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.flashAttention.enabled = v }) })}
+          />
+        ),
+      })
+    }
+
+    // KV Cache
+    if (has.kvCache) {
+      sections.push({
+        key: `${prefix}-kv`,
+        title: 'KV Cache',
+        has: true,
+        summary: `${g.kvCache.typeK ?? '—'}/${g.kvCache.typeV ?? '—'}`,
+        content: (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="type-k">
+              <select
+                className={selectCls}
+                value={g.kvCache.typeK ?? ''}
+                onChange={(e) =>
+                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeK = e.target.value || undefined }) })
+                }
+              >
+                <option value="">(default)</option>
+                <option value="f16">f16</option>
+                <option value="q8_0">q8_0</option>
+                <option value="q4_0">q4_0</option>
+              </select>
+            </Field>
+            <Field label="type-v">
+              <select
+                className={selectCls}
+                value={g.kvCache.typeV ?? ''}
+                onChange={(e) =>
+                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeV = e.target.value || undefined }) })
+                }
+              >
+                <option value="">(default)</option>
+                <option value="f16">f16</option>
+                <option value="q8_0">q8_0</option>
+                <option value="q4_0">q4_0</option>
+              </select>
+            </Field>
+          </div>
+        ),
+      })
+    }
+
+    // Batching
+    if (has.batching) {
+      sections.push({
+        key: `${prefix}-batch`,
+        title: 'Batching',
+        has: true,
+        summary: `parallel ${g.batching.parallel ?? '—'}`,
+        content: (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="parallel">
+              <NumInput
+                value={g.batching.parallel}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.batching.parallel = v }) })}
+              />
+            </Field>
+            <Field label="threads-batch">
+              <NumInput
+                value={g.batching.threadsBatch}
+                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.batching.threadsBatch = v }) })}
+              />
+            </Field>
+          </div>
+        ),
+      })
+    }
+
+    // Reasoning
+    if (has.reasoning) {
+      sections.push({
+        key: `${prefix}-reason`,
+        title: 'Reasoning',
+        has: true,
+        summary: g.reasoning.effort ?? '',
+        content: (
+          <div className="space-y-2">
+            <Toggle
+              label="preserve"
+              checked={g.reasoning.preserve}
+              onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.preserve = v }) })}
+            />
+            <Toggle
+              label="jinja"
+              checked={g.reasoning.jinja}
+              onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.jinja = v }) })}
+            />
+            <Field label="effort">
+              <select
+                className={selectCls}
+                value={g.reasoning.effort ?? ''}
+                onChange={(e) =>
+                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.effort = e.target.value || undefined }) })
+                }
+              >
+                <option value="">(default)</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
+            </Field>
+          </div>
+        ),
+      })
+    }
+
+    // Image
+    if (has.image) {
+      sections.push({
+        key: `${prefix}-image`,
+        title: 'Image',
+        has: true,
+        summary: `min-tokens ${g.image.minTokens ?? '—'}`,
+        content: (
+          <Field label="image-min-tokens">
+            <NumInput
+              value={g.image.minTokens}
+              onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.image.minTokens = v }) })}
+            />
+          </Field>
+        ),
+      })
+    }
+
+    return (
+      <div className="col-span-2 mt-2 space-y-1.5">
+        {sections.map((s) => (
+          <FlagSection
+            key={s.key}
+            title={s.title}
+            summary={s.summary}
+            open={!!sectionOpen[s.key]}
+            onToggle={() => toggleSection(s.key)}
+          >
+            {s.content}
+          </FlagSection>
+        ))}
+        {/* Custom flags — always available */}
+        <FlagSection
+          title="Custom flags"
+          summary={g.custom ? g.custom.slice(0, 40) + (g.custom.length > 40 ? '…' : '') : ''}
+          open={!!sectionOpen[`${prefix}-custom`] || has.custom}
+          onToggle={() => toggleSection(`${prefix}-custom`)}
+        >
+          <textarea
+            className={inputCls + ' h-14 resize-y'}
+            value={g.custom}
+            onChange={(e) =>
+              set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.custom = e.target.value }) })
+            }
+            placeholder="--any-custom-flag value …"
+          />
+        </FlagSection>
+      </div>
+    )
+  }
+
   return (
     <>
       <h2 className="text-lg font-semibold text-neutral-100">Models</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        The llama-server path is filled in automatically (managed llama.cpp). Extra flags are
-        appended verbatim (spec decoding, sampling…).
+        The llama-server path is filled in automatically (managed llama.cpp). Flags are
+        organized into sections — unknown flags go to Custom.
       </p>
 
       <section className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
@@ -190,16 +548,7 @@ export function ModelsPage() {
                           }
                         />
                       </Field>
-                      <div className="col-span-2">
-                        <Field label="extra flags (optional)">
-                          <textarea
-                            className={inputCls + ' h-16 resize-y'}
-                            value={m.extraFlags}
-                            onChange={(e) => set(i, { extraFlags: e.target.value })}
-                            placeholder={'--flash-attn on\n--spec-type draft-mtp ...'}
-                          />
-                        </Field>
-                      </div>
+                      {renderFlagSections(i, m)}
                     </div>
                   </div>
                 )}
