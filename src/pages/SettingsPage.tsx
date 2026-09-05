@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { bridge, type DownloadProgress } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
+import { checkAppUpdate, type AppRelease } from '../lib/appUpdate'
 
 interface SettingsPageProps {
   cfg: AppConfig
@@ -46,6 +48,54 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
   const [startWithSystem, setStartWithSystem] = useState(cfg.startWithSystem)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  // App self-update state
+  const [appUpdate, setAppUpdate] = useState<AppRelease | null>(null)
+  const [checkingApp, setCheckingApp] = useState(false)
+  const [installingApp, setInstallingApp] = useState(false)
+  const [appUpdateMsg, setAppUpdateMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [appProgress, setAppProgress] = useState<DownloadProgress | null>(null)
+
+  const checkApp = async () => {
+    setCheckingApp(true)
+    setAppUpdateMsg(null)
+    try {
+      const release = await checkAppUpdate(import.meta.env.VITE_APP_VERSION)
+      setAppUpdate(release)
+      if (!release) setAppUpdateMsg({ kind: 'ok', text: 'up to date' })
+    } catch (e) {
+      setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'check failed' })
+    } finally {
+      setCheckingApp(false)
+    }
+  }
+
+  const installApp = async () => {
+    if (!appUpdate?.installerUrl) return
+    setInstallingApp(true)
+    setAppUpdateMsg(null)
+    try {
+      await bridge.downloadAndLaunchInstaller(appUpdate.installerUrl)
+      setAppUpdateMsg({ kind: 'ok', text: 'installer launched — close the app when prompted' })
+    } catch (e) {
+      setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'install failed' })
+    } finally {
+      setInstallingApp(false)
+    }
+  }
+
+  // Subscribe to download progress for the app installer
+  useEffect(() => {
+    let off: (() => void) | undefined
+    void bridge.onDownloadProgress((p) => {
+      if (p.component === 'app') setAppProgress(p)
+    }).then((u) => {
+      off = u
+    })
+    return () => {
+      off?.()
+    }
+  }, [])
 
   const dirty =
     port !== cfg.llamaSwapPort ||
@@ -162,6 +212,78 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
             </span>
           )}
         </div>
+      </section>
+
+      {/* App self-update */}
+      <section className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-neutral-200">App version</h3>
+            <p className="font-mono text-xs text-neutral-500">v{import.meta.env.VITE_APP_VERSION}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void checkApp()}
+            disabled={checkingApp || installingApp}
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+          >
+            {checkingApp ? 'Checking…' : 'Check for update'}
+          </button>
+        </div>
+
+        {appUpdate && (
+          <div className="mt-3 rounded-md border border-sky-900 bg-sky-950/30 p-3">
+            <p className="text-sm font-medium text-sky-300">v{appUpdate.version} available</p>
+            {appUpdate.notes && (
+              <div className="mt-2 max-h-32 overflow-auto rounded bg-neutral-950/60 p-2">
+                <pre className="whitespace-pre-wrap font-sans text-xs text-neutral-400">
+                  {appUpdate.notes}
+                </pre>
+              </div>
+            )}
+            {appUpdate.installerUrl && (
+              <button
+                type="button"
+                onClick={() => void installApp()}
+                disabled={installingApp}
+                className="mt-3 rounded-md bg-sky-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-wait disabled:opacity-60"
+              >
+                {installingApp ? 'Downloading…' : 'Download & install'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {appProgress && installingApp && (
+          <div className="mt-3">
+            <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">
+              <div
+                className={
+                  'h-full bg-sky-500 ' +
+                  (appProgress.total === null ? 'animate-pulse' : 'transition-[width] duration-200')
+                }
+                style={{
+                  width:
+                    appProgress.total !== null
+                      ? `${Math.min(100, Math.round((appProgress.received / appProgress.total) * 100))}%`
+                      : '100%',
+                }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-neutral-400">
+              {Math.round(appProgress.received / (1024 * 1024))} MB
+              {appProgress.total !== null
+                ? ` / ${Math.round(appProgress.total / (1024 * 1024))} MB`
+                : ''}
+            </p>
+          </div>
+        )}
+
+        {appUpdateMsg && (
+          <p className={'mt-3 text-xs ' + (appUpdateMsg.kind === 'ok' ? 'text-emerald-600' : 'text-red-400')}>
+            {appUpdateMsg.text}
+          </p>
+        )}
       </section>
     </>
   )

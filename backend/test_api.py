@@ -352,3 +352,54 @@ class TestKeyMapping:
         assert out["cudaMajor"] == 12
         assert out["autoStartLlamaSwap"] is True
         assert out["closeToTray"] is False
+
+
+class TestAppUpdate:
+    def test_download_and_launch_installer_no_url(self, home, monkeypatch):
+        """A non-URL should fail gracefully (not crash)."""
+        api = Api()
+        monkeypatch.setattr("os.startfile", lambda x: None, raising=False)
+        # Use a file:// URL that doesn't exist
+        res = api.download_and_launch_installer("https://127.0.0.1:1/nonexistent.exe")
+        assert "error" in res
+
+    def test_download_and_launch_installer_success(self, home, monkeypatch):
+        """Download a small file from a local HTTP server, then launch it."""
+        import tempfile
+
+        api = Api()
+        # Create a temp file to serve
+        content = b"fake-installer-bytes"
+        served = home / "installer.exe"
+        served.write_bytes(content)
+
+        # Start a local server
+        server = _make_server(home)
+        port = server.server_address[1]
+
+        # Patch startfile to capture the launched path
+        launched: list[str] = []
+        monkeypatch.setattr("os.startfile", lambda x: launched.append(x), raising=False)
+
+        res = api.download_and_launch_installer(f"http://127.0.0.1:{port}/installer.exe")
+        assert res.get("launched") is True
+        assert len(launched) == 1
+        # The downloaded file should exist in tempdir
+        import os
+
+        tmp_name = os.path.join(tempfile.gettempdir(), "installer.exe")
+        assert os.path.exists(tmp_name)
+        assert Path(tmp_name).read_bytes() == content
+        server.shutdown()
+
+
+def _make_server(root: Path):
+    """Minimal HTTP server serving files from `root`."""
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    import functools
+    import os
+
+    handler = functools.partial(SimpleHTTPRequestHandler, directory=str(root))
+    server = HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server

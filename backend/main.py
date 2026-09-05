@@ -435,6 +435,36 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
+    # --- App self-update ---------------------------------------------------
+
+    def download_and_launch_installer(self, url: str) -> dict:
+        """Download the app installer to a temp file and launch it.
+
+        The Inno Setup installer overwrites the existing installation.
+        Returns {launched: True} or {error}.
+        """
+        import tempfile
+
+        name = url.rsplit("/", 1)[-1].split("?")[0] or "llama-center-setup.exe"
+        tmp = Path(tempfile.gettempdir()) / name
+
+        def _on_progress(received: int, total: int | None) -> None:
+            self._push_progress({"component": "app", "file": name, "received": received, "total": total})
+
+        try:
+            updater.download(url, tmp, None, progress=_on_progress)
+            if os.name == "nt":
+                os.startfile(str(tmp))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(
+                    ["xdg-open", str(tmp)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            return {"launched": True}
+        except (updater.UpdateError, OSError) as e:
+            return {"error": str(e)}
+
     def import_llama_swap_config(self, path: str) -> dict:
         """Parse an existing llama-swap config file (e.g. an old config.yaml)
         into model defs. {models} | {error}."""
