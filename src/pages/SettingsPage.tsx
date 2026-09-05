@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { bridge, type DownloadProgress } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
-import { checkAppUpdate, type AppRelease } from '../lib/appUpdate'
+import { checkAppUpdate, CHECK_TIMEOUT_MS, type AppRelease } from '../lib/appUpdate'
 
 interface SettingsPageProps {
   cfg: AppConfig
@@ -52,12 +52,26 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
   // App self-update state
   const [appUpdate, setAppUpdate] = useState<AppRelease | null>(null)
   const [checkingApp, setCheckingApp] = useState(false)
+  const [checkStartedAt, setCheckStartedAt] = useState<number | null>(null)
   const [installingApp, setInstallingApp] = useState(false)
   const [appUpdateMsg, setAppUpdateMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [appProgress, setAppProgress] = useState<DownloadProgress | null>(null)
 
+  // Countdown shown on the button while a check is in flight: the check is
+  // bounded (CHECK_TIMEOUT_MS), so the user always sees how much longer it
+  // can take — no silent "dead button" to click again.
+  const [, forceTick] = useState(0)
+  useEffect(() => {
+    if (checkStartedAt === null) return
+    const id = setInterval(() => forceTick((n) => n + 1), 250)
+    return () => clearInterval(id)
+  }, [checkStartedAt])
+  const checkRemaining =
+    checkStartedAt !== null ? Math.max(0, Math.ceil((checkStartedAt + CHECK_TIMEOUT_MS - Date.now()) / 1000)) : 0
+
   const checkApp = async () => {
     setCheckingApp(true)
+    setCheckStartedAt(Date.now())
     setAppUpdateMsg(null)
     try {
       const release = await checkAppUpdate(import.meta.env.VITE_APP_VERSION)
@@ -67,6 +81,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
       setAppUpdateMsg({ kind: 'err', text: e instanceof Error ? e.message : 'check failed' })
     } finally {
       setCheckingApp(false)
+      setCheckStartedAt(null)
     }
   }
 
@@ -231,7 +246,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
             disabled={checkingApp || installingApp}
             className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
           >
-            {checkingApp ? 'Checking…' : 'Check for update'}
+            {checkingApp ? `Checking… ${checkRemaining}s` : 'Check for update'}
           </button>
         </div>
 
