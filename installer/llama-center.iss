@@ -1,9 +1,9 @@
 ; Llama Center — Inno Setup script
 ; Build: ISCC installer\llama-center.iss (from project root)
-; Output: dist\llama-center-setup-0.2.3.exe
+; Output: dist\llama-center-setup-0.2.4.exe
 
 #define MyAppName "Llama Center"
-#define MyAppVersion "0.2.3"
+#define MyAppVersion "0.2.4"
 #define MyAppPublisher "Llama Center"
 #define MyAppURL "https://github.com/williammc2/llama-center"
 #define MyAppExeName "llama-center.exe"
