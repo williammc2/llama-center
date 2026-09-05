@@ -36,9 +36,14 @@
 - [x] Api: `save/get/import_llama_swap_config`; start uses `--config`, errors "no-config" when empty
 - [x] Home "llama-swap models" card: per-model fields, validation (field errors before save), import from file
 
+## UI — Sidebar shell (owner: @builder) ✅ DONE
+- [x] `Shell.tsx`: fixed sidebar (Server / Models / llama.cpp / Settings), one page at a time, window no longer scrolls
+- [x] Pages: `src/pages/ServerPage.tsx`, `ModelsPage.tsx`, `CppPage.tsx`, `SettingsPage.tsx` (port, install dir, toggles, "Change setup")
+- [x] Status dot in the sidebar (green=healthy, amber=busy, off=stopped); Home.tsx deleted
+
 ## P5 — Settings + tray (owner: @builder)
-- [ ] Settings: port, language, auto-start (app / llama-swap), check-on-start, close-to-tray, sycl precision (fp16/fp32)
-- [ ] Tray icon + menu; autostart entries (HKCU Run / XDG desktop file)
+- [x] Settings page: port, install dir, check-on-start, auto-start llama-swap, close-to-tray, start-with-system, backend display + wizard
+- [ ] Tray icon + menu; autostart entries (HKCU Run / XDG desktop file) — the toggles persist, wiring lands here
 - [ ] Onboarding polish
 
 ## P6 — Packaging + release (owner: @releaser)

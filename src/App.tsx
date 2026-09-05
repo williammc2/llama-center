@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Home } from './components/Home'
+import { Shell } from './components/Shell'
 import { Wizard } from './components/Wizard'
 import { bridge } from './lib/bridge'
 import type { AppConfig } from './lib/config'
@@ -12,6 +12,7 @@ type Ready =
 export default function App() {
   const [state, setState] = useState<Ready>({ status: 'loading' })
   const [reconfiguring, setReconfiguring] = useState(false)
+  const [cfg, setCfg] = useState<AppConfig | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -27,7 +28,9 @@ export default function App() {
       await waitForApi()
       try {
         const [cfg, detection] = await Promise.all([bridge.getConfig(), bridge.getDetection()])
-        if (alive) setState({ status: 'ready', cfg, detection })
+        if (!alive) return
+        setCfg(cfg)
+        setState({ status: 'ready', cfg, detection })
       } catch (e) {
         // Corrupt config: show the wizard with a notice instead of crashing.
         if (!alive) return
@@ -41,6 +44,11 @@ export default function App() {
     }
   }, [])
 
+  const saveConfig = async (next: AppConfig) => {
+    await bridge.saveConfig(next)
+    setCfg(next)
+  }
+
   if (state.status === 'loading') {
     return (
       <main className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-500">
@@ -49,7 +57,7 @@ export default function App() {
     )
   }
 
-  const { cfg, detection } = state
+  const { detection } = state
 
   const showWizard = reconfiguring || !cfg?.firstRunDone
 
@@ -69,9 +77,5 @@ export default function App() {
     )
   }
 
-  return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-12 text-neutral-200">
-      <Home cfg={cfg} detection={detection} onReconfigure={() => setReconfiguring(true)} />
-    </main>
-  )
+  return <Shell cfg={cfg} detection={detection} onSaveConfig={saveConfig} onReconfigure={() => setReconfiguring(true)} />
 }
