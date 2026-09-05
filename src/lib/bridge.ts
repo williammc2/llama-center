@@ -86,6 +86,8 @@ export interface Bridge {
   importLlamaSwapConfig(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
   /** Open a URL in the default browser. */
   openUrl(url: string): Promise<{ opened?: boolean; error?: string }>
+  /** Open a folder in the OS file explorer. */
+  openPath(path: string): Promise<{ opened?: boolean; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -113,6 +115,7 @@ interface PywebviewApi {
   get_llama_swap_config(): Promise<{ models: SwapModelDef[]; path: string | null }>
   import_llama_swap_config(path: string): Promise<{ models?: SwapModelDef[]; error?: string }>
   open_url(url: string): Promise<{ opened?: boolean; error?: string }>
+  open_path(path: string): Promise<{ opened?: boolean; error?: string }>
 }
 
 declare global {
@@ -190,6 +193,9 @@ const pywebview: Bridge = {
   async openUrl(url) {
     return window.pywebview!.api.open_url(url)
   },
+  async openPath(path) {
+    return window.pywebview!.api.open_path(path)
+  },
   async onDownloadProgress(cb) {
     window.__lcProgress = cb
     return () => {
@@ -262,6 +268,9 @@ const browser: Bridge = {
   async openUrl(url) {
     window.open(url, '_blank')
     return { opened: true }
+  },
+  async openPath() {
+    return { error: 'needs the desktop shell' }
   },
   async onDownloadProgress() {
     return () => {}

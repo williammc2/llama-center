@@ -324,6 +324,15 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
               {(() => { const m = /v(\d+)/.exec(backups[0]); return m ? `Rollback → v${m[1]}` : 'Rollback' })()}
             </button>
           )}
+          {backups.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void bridge.openPath(`${cfg.installDir}/backups/llama-swap`)}
+              className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-500 transition-colors hover:border-neutral-500 hover:text-neutral-300"
+            >
+              Open backups
+            </button>
+          )}
         </div>
 
         {showLogs && (
