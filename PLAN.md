@@ -19,7 +19,9 @@ Status: P0–P6 done (all user-verified). Owner: @architect (plan) / @builder (c
 | P5 settings/tray/autostart | ✅ DONE + USER-VERIFIED | Settings page (shell); tray icon (pystray, runtime-generated icon, menu Show/Start/Stop/Check updates/Quit); close-to-tray (user verified Show); `--minimized` login start; autostart (HKCU Run / XDG .desktop, applied on save_config); autoStartLlamaSwap (port must be free) |
 | P6 packaging | ✅ DONE | `llama-center.spec` (onedir; UI bundled as data via `sys._MEIPASS`; lazy-import hidden imports for pywebview backends + pystray; icon generated from icon.py); `build.bat`; CI matrix (win+ubuntu: test + package + artifact); frozen-aware `main.py` (dist_dir, no sys.path insert). Packaged exe verified: window + WebView2 child alive |
 
-**Status: all phases done.** Remaining polish: onboarding, i18n runtime (EN/PT-BR toggle), app self-update, live config reload.
+**Next goal:** P7 — Inno Setup installer (Windows): per-user setup exe wrapping the onedir (shortcuts, uninstaller, "run now"); CI uploads the installer as an artifact. Full plan in `tasks/todo.md` (P7).
+
+Remaining polish after P7: onboarding, i18n runtime (EN/PT-BR toggle), app self-update, live config reload, (optional) Linux AppImage, (optional) GitHub Releases workflow.
 
 ## 1. Stack (decided)
 
