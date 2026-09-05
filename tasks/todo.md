@@ -41,9 +41,12 @@
 - [x] Pages: `src/pages/ServerPage.tsx`, `ModelsPage.tsx`, `CppPage.tsx`, `SettingsPage.tsx` (port, install dir, toggles, "Change setup")
 - [x] Status dot in the sidebar (green=healthy, amber=busy, off=stopped); Home.tsx deleted
 
-## P5 — Settings + tray (owner: @builder)
+## P5 — Settings + tray (owner: @builder) ✅ DONE
 - [x] Settings page: port, install dir, check-on-start, auto-start llama-swap, close-to-tray, start-with-system, backend display + wizard
-- [ ] Tray icon + menu; autostart entries (HKCU Run / XDG desktop file) — the toggles persist, wiring lands here
+- [x] Tray icon (pystray, runtime-generated) + menu: Show / Start / Stop / Check updates / Quit
+- [x] Close-to-tray (closing_event → hide); `--minimized` flag for login starts
+- [x] Autostart: HKCU Run (win) / XDG .desktop (linux), applied on save_config
+- [x] autoStartLlamaSwap: server starts with the app when the port is free
 - [ ] Onboarding polish
 
 ## P6 — Packaging + release (owner: @releaser)

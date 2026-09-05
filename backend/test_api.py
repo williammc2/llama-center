@@ -59,6 +59,21 @@ class TestApi:
         assert "error" in res
         assert "backend" in res["error"]
 
+    def test_save_config_applies_autostart(self, home, monkeypatch):
+        """The startWithSystem toggle takes effect at save time, not next launch."""
+        import main as mainmod
+
+        calls: list[bool] = []
+        monkeypatch.setattr(mainmod.autostart, "apply", lambda enabled: calls.append(enabled))
+        assert "path" in Api().save_config(
+            {"version": 1, "installDir": str(home / "r"), "startWithSystem": True}
+        )
+        assert calls == [True]
+        Api().save_config(
+            {"version": 1, "installDir": str(home / "r"), "startWithSystem": False}
+        )
+        assert calls == [True, False]
+
     def test_get_config_missing_returns_defaults(self, home):
         api = Api()
         cfg = api.get_config()

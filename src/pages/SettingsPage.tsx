@@ -129,7 +129,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
           />
           <Toggle
             label="Start llama-swap when the app starts"
-            hint="The server starts automatically (P5 — tray/autostart)."
+            hint="The server starts with the app (only when the port is free)."
             value={autoStartLlamaSwap}
             onChange={setAutoStartLlamaSwap}
           />
@@ -141,7 +141,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure }: SettingsPageP
           />
           <Toggle
             label="Start with system"
-            hint="The app starts at login, minimized to tray (P5 — tray/autostart)."
+            hint="The app starts at login, minimized to the tray."
             value={startWithSystem}
             onChange={setStartWithSystem}
           />

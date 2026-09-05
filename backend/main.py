@@ -28,6 +28,13 @@ P4 surface (llama-swap config / models):
   - save_llama_swap_config(models) → {path} | {error}
   - get_llama_swap_config() → {models, path}
   - import_llama_swap_config(path) → {models} | {error}
+
+P5 (tray + autostart):
+  - save_config applies the autostart entry (startWithSystem)
+  - `--minimized` flag: start hidden in the tray (login start)
+  - close-to-tray when configured; tray menu: Show / Start / Stop /
+    Check updates / Quit
+  - autoStartLlamaSwap: the server starts with the app (port must be free)
 """
 from __future__ import annotations
 
@@ -36,6 +43,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import urllib.request
 from dataclasses import asdict
 from pathlib import Path
@@ -44,8 +52,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+import pystray  # noqa: E402
 import webview  # noqa: E402
 
+from llama_center import autostart  # noqa: E402
+from llama_center.icon import make_icon  # noqa: E402
 from llama_center.config import (  # noqa: E402
     AppConfig,
     ConfigError,
@@ -60,6 +71,10 @@ from llama_center.detect import detect  # noqa: E402
 
 # The single managed llama-swap process (module-level: one per app run).
 _managed: proc.LlamaSwapProcess | None = None
+
+# Tray state (module-level: one icon per app run).
+_tray_icon: "pystray.Icon | None" = None
+_force_quit = False
 
 
 def shutdown_managed() -> None:
@@ -96,13 +111,20 @@ class Api:
         return self._to_camel(cfg)
 
     def save_config(self, raw: dict) -> dict:
-        """Validate + persist. Returns {path} or {error}."""
+        """Validate + persist. Returns {path} or {error}.
+
+        Also applies the autostart entry so the toggle takes effect at once.
+        """
         try:
             cfg = parse_config(self._from_camel(raw))
             path = save_config(cfg)
-            return {"path": path}
         except ConfigError as e:
             return {"error": str(e)}
+        try:
+            autostart.apply(cfg.start_with_system)
+        except Exception:
+            pass  # autostart is best-effort; the config save is what matters
+        return {"path": path}
 
     # --- P1: llama-swap install/update -------------------------------------
 
@@ -420,6 +442,57 @@ class Api:
         return {rev.get(k, k): v for k, v in d.items()}
 
 
+def _tray_quit(window) -> None:
+    global _force_quit
+    _force_quit = True
+    window.destroy()
+
+
+def _tray_check_updates(window) -> None:
+    window.show()
+    try:
+        window.evaluate_js("window.__lcCheckUpdates && window.__lcCheckUpdates()")
+    except Exception:
+        pass
+
+
+def start_tray(window, api: Api) -> None:
+    """Run the tray icon in a daemon thread (pystray blocks)."""
+    global _tray_icon
+
+    def run() -> None:
+        menu = pystray.Menu(
+            pystray.MenuItem("Show", window.show, default=True),
+            pystray.MenuItem("Start llama-swap", lambda icon, item: api.start_llama_swap()),
+            pystray.MenuItem("Stop llama-swap", lambda icon, item: api.stop_llama_swap()),
+            pystray.MenuItem("Check for updates", lambda icon, item: _tray_check_updates(window)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Quit", lambda icon, item: _tray_quit(window)),
+        )
+        icon = pystray.Icon("llama-center", make_icon(), "llama-center")
+        icon.menu = menu
+        _tray_icon = icon
+        icon.run()
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _maybe_autostart_swap(api: Api) -> None:
+    """autoStartLlamaSwap: start the server with the app (only when the port
+    is free — an external llama-swap is adopted by the UI, not killed here)."""
+    import time
+
+    time.sleep(2)  # let the window + API come up
+    try:
+        cfg = load_config()
+        if not cfg.auto_start_llama_swap:
+            return
+        if not updater.probe_port(cfg.llama_swap_port):
+            api.start_llama_swap()
+    except ConfigError:
+        pass
+
+
 def main() -> int:
     dist = REPO_ROOT / "dist" / "index.html"
     if not dist.exists():
@@ -437,8 +510,31 @@ def main() -> int:
         min_size=(880, 600),
         background_color="#0a0a0a",
         js_api=api,
+        hidden="--minimized" in sys.argv,  # login start → straight to the tray
     )
+
+    def on_closing(e) -> None:
+        """Close-to-tray: cancel the close and hide instead of quitting."""
+        try:
+            cfg = load_config()
+            if cfg.close_to_tray and not _force_quit:
+                e.cancel = True
+                window.hide()
+        except ConfigError:
+            pass
+
+    window.closing_event += on_closing
+
+    start_tray(window, api)
+    threading.Thread(target=_maybe_autostart_swap, args=(api,), daemon=True).start()
+
     webview.start()
+
+    if _tray_icon is not None:
+        try:
+            _tray_icon.stop()
+        except Exception:
+            pass
     return 0
 
 
