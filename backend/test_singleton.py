@@ -1,0 +1,119 @@
+"""Tests for llama_center.singleton — the single-instance lock + IPC.
+
+Runs the REAL platform primitives (named mutex/event on Windows, flock +
+AF_UNIX socket on Linux) with a unique name per test, so they never
+collide with a running llama-center app.
+"""
+import os
+import threading
+import time
+import uuid
+
+import pytest
+
+from llama_center import singleton as S
+
+
+def _unique_name() -> str:
+    return f"lc-test-{uuid.uuid4().hex[:8]}"
+
+
+@pytest.fixture
+def root(tmp_path, monkeypatch):
+    """Point the per-user data root at a temp dir (Linux lock + socket live there)."""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
+    return tmp_path
+
+
+class TestAcquire:
+    def test_first_instance_acquires(self, root):
+        s = S.Singleton(name=_unique_name())
+        try:
+            assert s.acquire() is True
+        finally:
+            s.release()
+
+    def test_second_instance_fails(self, root):
+        name = _unique_name()
+        a = S.Singleton(name=name)
+        b = S.Singleton(name=name)
+        try:
+            assert a.acquire() is True
+            assert b.acquire() is False
+        finally:
+            a.release()
+            b.release()
+
+    def test_release_reopens(self, root):
+        name = _unique_name()
+        a = S.Singleton(name=name)
+        b = S.Singleton(name=name)
+        assert a.acquire() is True
+        a.release()
+        try:
+            assert b.acquire() is True
+        finally:
+            b.release()
+
+    def test_different_names_do_not_collide(self, root):
+        a = S.Singleton(name=_unique_name())
+        b = S.Singleton(name=_unique_name())
+        try:
+            assert a.acquire() is True
+            assert b.acquire() is True
+        finally:
+            a.release()
+            b.release()
+
+
+class TestShowSignal:
+    def test_signal_shows_first_instance(self, root):
+        """Second launch sends 'show' → first instance's callback fires."""
+        name = _unique_name()
+        got = threading.Event()
+        first = S.Singleton(name=name)
+        second = S.Singleton(name=name)
+        try:
+            assert first.acquire() is True
+            first.start_listening(lambda cmd: got.set() if cmd == "show" else None)
+            time.sleep(0.3)  # let the listener create its event/socket
+            assert second.acquire() is False
+            assert second.signal("show") is True
+            assert got.wait(3.0), "first instance never received the show request"
+        finally:
+            first.release()
+            second.release()
+
+    def test_signal_without_listener_fails(self, root):
+        """No one is listening (e.g. stale lock) → signal gives up, no hang."""
+        name = _unique_name()
+        a = S.Singleton(name=name)
+        b = S.Singleton(name=name)
+        assert a.acquire() is True  # holds the lock but never start_listening()
+        try:
+            assert b.acquire() is False
+            assert b.signal("show", timeout=0.4) is False
+        finally:
+            a.release()
+            b.release()
+
+    def test_dispatch_swallows_callback_errors(self, root):
+        """A broken callback must not kill the listener thread."""
+        name = _unique_name()
+        first = S.Singleton(name=name)
+        second = S.Singleton(name=name)
+        try:
+            assert first.acquire() is True
+            first.start_listening(lambda cmd: (_ for _ in ()).throw(RuntimeError("boom")))
+            time.sleep(0.3)
+            assert second.acquire() is False
+            assert second.signal("show") is True
+            time.sleep(0.5)  # listener survives → still able to receive
+            got = threading.Event()
+            first._on_command = lambda cmd: got.set()
+            assert second.signal("show") is True
+            assert got.wait(3.0)
+        finally:
+            first.release()
+            second.release()

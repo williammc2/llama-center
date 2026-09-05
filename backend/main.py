@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+import time
 import urllib.request
 from dataclasses import asdict
 from pathlib import Path
@@ -75,6 +76,7 @@ from llama_center.config import (  # noqa: E402
     save_config,
 )
 from llama_center import process as proc  # noqa: E402
+from llama_center import singleton as single  # noqa: E402
 from llama_center import swapconfig as swc  # noqa: E402
 from llama_center import updater  # noqa: E402
 from llama_center.detect import detect  # noqa: E402
@@ -615,6 +617,17 @@ def main() -> int:
         print(f"UI not built — run `pnpm build` first (expected {dist}).", file=sys.stderr)
         return 1
 
+    # Single-instance guard. The first process owns the lock and stays alive in
+    # the tray (close-to-tray). A second launch — e.g. clicking the desktop or
+    # Start shortcut while the app is hidden — fails to acquire, asks the first
+    # instance to surface its window, and exits. Without this, the shortcut
+    # spawns a whole second app.
+    lock = single.Singleton()
+    if not lock.acquire():
+        lock.signal("show")
+        time.sleep(0.3)  # let the first instance process the message before we exit
+        return 0
+
     atexit.register(shutdown_managed)
 
     api = Api()
@@ -646,6 +659,11 @@ def main() -> int:
 
     window.events.closing += on_closing
 
+    # IPC listener: a second launch sends "show" → surface this window.
+    # window.show() marshals to the GUI thread in each backend (Invoke /
+    # glib.idle_add), so calling it from the listener thread is safe.
+    lock.start_listening(lambda cmd: window.show() if cmd == "show" else None)
+
     start_tray(window, api)
     threading.Thread(target=_maybe_autostart_swap, args=(api,), daemon=True).start()
 
@@ -656,6 +674,7 @@ def main() -> int:
             _tray_icon.stop()
         except Exception:
             pass
+    lock.release()
     return 0
 
 
