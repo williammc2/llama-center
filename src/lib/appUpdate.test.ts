@@ -2,23 +2,29 @@ import { describe, it, expect, vi } from 'vitest'
 import { parseAppRelease, compareVersions, checkAppUpdate } from './appUpdate'
 
 describe('parseAppRelease', () => {
-  it('parses a valid release payload', () => {
-    const raw = {
-      tag_name: 'v0.2.0',
-      name: 'v0.2.0',
-      body: '### Features\n- new thing',
-      published_at: '2026-09-05T12:00:00Z',
-      assets: [
-        { name: 'llama-center-setup-0.2.0.exe', browser_download_url: 'https://github.com/x/releases/download/v0.2.0/llama-center-setup-0.2.0.exe' },
-        { name: 'llama-center-linux', browser_download_url: 'https://github.com/x/releases/download/v0.2.0/llama-center-linux' },
-      ],
+  it('parses a valid release payload (Windows)', () => {
+    const orig = Object.getOwnPropertyDescriptor(navigator, 'platform')
+    Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true })
+    try {
+      const raw = {
+        tag_name: 'v0.2.0',
+        name: 'v0.2.0',
+        body: '### Features\n- new thing',
+        published_at: '2026-09-05T12:00:00Z',
+        assets: [
+          { name: 'llama-center-setup-0.2.0.exe', browser_download_url: 'https://github.com/x/releases/download/v0.2.0/llama-center-setup-0.2.0.exe' },
+          { name: 'llama-center-0.2.0-linux-x86_64.tar.gz', browser_download_url: 'https://github.com/x/releases/download/v0.2.0/llama-center-linux.tar.gz' },
+        ],
+      }
+      const rel = parseAppRelease(raw)
+      expect(rel.version).toBe('0.2.0')
+      expect(rel.tag).toBe('v0.2.0')
+      expect(rel.notes).toContain('new thing')
+      expect(rel.installerUrl).toContain('.exe')
+      expect(rel.publishedAt).toBe('2026-09-05T12:00:00Z')
+    } finally {
+      if (orig) Object.defineProperty(navigator, 'platform', orig)
     }
-    const rel = parseAppRelease(raw)
-    expect(rel.version).toBe('0.2.0')
-    expect(rel.tag).toBe('v0.2.0')
-    expect(rel.notes).toContain('new thing')
-    expect(rel.installerUrl).toContain('.exe')
-    expect(rel.publishedAt).toBe('2026-09-05T12:00:00Z')
   })
 
   it('selects .tar.gz on Linux platform', () => {
