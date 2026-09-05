@@ -215,8 +215,8 @@ class TestSwapConfig:
     """P4 — save/get/import of the llama-swap models config."""
 
     MODEL = {
-        "name": "qwen3.8-27b",
-        "model": "D:\\models\\Qwen3.8-27B.gguf",
+        "name": "example-model",
+        "model": "D:\\models\\model.gguf",
         "mmproj": "D:\\models\\mmproj.gguf",
         "draft": None,
         "ctxSize": 262144,
@@ -249,8 +249,8 @@ class TestSwapConfig:
         assert got["path"] == str(p)
         assert len(got["models"]) == 1
         m = got["models"][0]
-        assert m["name"] == "qwen3.8-27b"
-        assert m["model"] == "D:\\models\\Qwen3.8-27B.gguf"
+        assert m["name"] == "example-model"
+        assert m["model"] == "D:\\models\\model.gguf"
         assert m["mmproj"] == "D:\\models\\mmproj.gguf"
         assert m["ctxSize"] == 262144
         assert m["gpuLayers"] == 999
