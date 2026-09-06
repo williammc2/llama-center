@@ -30,6 +30,25 @@ import requests
 KEEP_BACKUPS = 2
 CHUNK = 1 << 16  # 64 KiB
 
+# User-managed files that live inside the live dir but are NOT part of the
+# release payload — they must survive a swap (and a rollback).
+PRESERVED_CONFIGS = ("llama-swap.yaml", "llama-swap.json")
+
+
+def _saved_configs(live: Path) -> dict[str, bytes]:
+    """Snapshot the preserved config files in `live` (may be empty)."""
+    saved: dict[str, bytes] = {}
+    for name in PRESERVED_CONFIGS:
+        p = live / name
+        if p.is_file():
+            saved[name] = p.read_bytes()
+    return saved
+
+
+def _restore_configs(live: Path, saved: dict[str, bytes]) -> None:
+    for name, data in saved.items():
+        (live / name).write_bytes(data)
+
 
 class UpdateError(Exception):
     """Anything that aborts an update, with a user-readable message."""
@@ -162,16 +181,22 @@ def atomic_swap(
     later rollback can restore the version. Returns the backup dir name, or
     None on a first install (nothing to back up). Prunes backups older than
     `keep`.
+
+    The preserved config files (`PRESERVED_CONFIGS`) are snapshotted before
+    the move and restored on top of the new install — the user's models
+    config survives every update.
     """
     if not staging_content.is_dir() or not any(staging_content.iterdir()):
         raise UpdateError("swap: staging is missing or empty")
     backups.mkdir(parents=True, exist_ok=True)
     backup_name = None
+    saved = _saved_configs(live) if live.exists() else {}
     if live.exists():
         backup_name = _backup_name(component, label)
         shutil.move(str(live), str(backups / backup_name))
     live.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(staging_content), str(live))
+    _restore_configs(live, saved)
     existing = sorted(
         (p for p in backups.iterdir() if p.is_dir()),
         key=lambda p: p.name,
@@ -206,9 +231,11 @@ def rollback(live: Path, backups: Path) -> bool:
     if not names:
         return False
     backup = backups / names[0]
+    saved = _saved_configs(live) if live.exists() else {}
     if live.exists():
         shutil.move(str(live), str(backups / (names[0] + ".failed")))
     shutil.move(str(backup), str(live))
+    _restore_configs(live, saved)
     return True
 
 

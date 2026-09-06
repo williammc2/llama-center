@@ -208,6 +208,23 @@ class TestSwap:
         with pytest.raises(UpdateError, match="staging"):
             updater.atomic_swap(d["live"], empty, d["backups"])
 
+    def test_update_preserves_config_file(self, tmp_path):
+        """The user's llama-swap.yaml must survive the live-dir swap."""
+        root = tmp_path / "root"
+        d = updater.component_dirs(str(root))
+        updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"], label="v1")
+        (d["live"] / "llama-swap.yaml").write_text("models:\n  a: {}\n")
+        updater.atomic_swap(d["live"], _stage(root, b"V2"), d["backups"], label="v2")
+        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V2"
+        assert (d["live"] / "llama-swap.yaml").read_text() == "models:\n  a: {}\n"
+
+    def test_first_install_has_nothing_to_preserve(self, tmp_path):
+        root = tmp_path / "root"
+        d = updater.component_dirs(str(root))
+        backup = updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"])
+        assert backup is None
+        assert not (d["live"] / "llama-swap.yaml").exists()
+
 
 class TestRollback:
     def test_rollback_restores_newest_backup(self, tmp_path):
@@ -223,6 +240,17 @@ class TestRollback:
         assert len(parked) == 1
         # parked installs don't show up as rollable backups
         assert not any(n.endswith(".failed") for n in updater.list_backups(d["backups"]))
+
+    def test_rollback_preserves_config_file(self, tmp_path):
+        """Config written after an update must survive a rollback too."""
+        root = tmp_path / "root"
+        d = updater.component_dirs(str(root))
+        updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"], label="v1")
+        updater.atomic_swap(d["live"], _stage(root, b"V2"), d["backups"], label="v2")
+        (d["live"] / "llama-swap.yaml").write_text("models:\n  b: {}\n")
+        assert updater.rollback(d["live"], d["backups"]) is True
+        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V1"
+        assert (d["live"] / "llama-swap.yaml").read_text() == "models:\n  b: {}\n"
 
     def test_rollback_without_backups(self, tmp_path):
         d = updater.component_dirs(str(tmp_path / "root"))
