@@ -158,6 +158,19 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
           >
             {phase.status === 'checking' ? 'Checking…' : 'Check for updates'}
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              void bridge.openUrl(
+                build
+                  ? `https://github.com/ggml-org/llama.cpp/releases/tag/${build.tag}`
+                  : 'https://github.com/ggml-org/llama.cpp/releases',
+              )
+            }
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+          >
+            Release notes
+          </button>
           {updateLabel && (
             <button
               type="button"

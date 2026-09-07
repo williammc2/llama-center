@@ -273,6 +273,19 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
           >
             {phase.status === 'checking' ? 'Checking…' : 'Check for updates'}
           </button>
+          <button
+            type="button"
+            onClick={() =>
+              void bridge.openUrl(
+                latest
+                  ? `https://github.com/mostlygeek/llama-swap/releases/tag/v${latest.version}`
+                  : 'https://github.com/mostlygeek/llama-swap/releases',
+              )
+            }
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+          >
+            Release notes
+          </button>
           {updateLabel && (
             <button
               type="button"
