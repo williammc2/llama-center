@@ -44,12 +44,12 @@ class TestWindows:
         import winreg
 
         autostart.set_windows(True)
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, autostart._RUN_KEY, 0, winreg.KEY_READ) as key:
+        key_arg = (winreg.HKEY_CURRENT_USER, autostart._RUN_KEY, 0, winreg.KEY_READ)
+        with winreg.OpenKey(*key_arg) as key:
             val, _ = winreg.QueryValueEx(key, autostart.APP_NAME)
         assert "--minimized" in val
         assert "main.py" in val
 
         autostart.set_windows(False)
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, autostart._RUN_KEY, 0, winreg.KEY_READ) as key:
-            with pytest.raises(FileNotFoundError):
-                winreg.QueryValueEx(key, autostart.APP_NAME)
+        with winreg.OpenKey(*key_arg) as key, pytest.raises(FileNotFoundError):
+            winreg.QueryValueEx(key, autostart.APP_NAME)

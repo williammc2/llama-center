@@ -206,7 +206,9 @@ describe('companionAsset', () => {
       tag_name: 'b1',
       assets: [{ name: 'llama-b1-bin-win-cuda-13.3-x64.zip', size: 1000, browser_download_url: 'x' }],
     })!
-    expect(companionAsset(sparse, sparse.info.assets[0])).toBeNull()
+    const only = sparse.info.assets[0]
+    expect(only).toBeDefined()
+    if (only) expect(companionAsset(sparse, only)).toBeNull()
   })
 })
 

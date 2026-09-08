@@ -129,7 +129,7 @@ export function parseChecksums(text: string): Record<string, string> {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const m = /^([0-9a-fA-F]{64})\s+(\S+)$/.exec(trimmed)
-    if (m) out[m[2]] = m[1].toLowerCase()
+    if (m && m[2] !== undefined) out[m[2]] = m[1]!.toLowerCase()
   }
   return out
 }

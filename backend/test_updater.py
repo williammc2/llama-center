@@ -80,17 +80,17 @@ def server():
 class TestComponentDirs:
     def test_llama_swap_defaults(self, tmp_path):
         d = updater.component_dirs(str(tmp_path))
-        assert d["live"].name == "llama-swap"
-        assert d["staging"].name == "staging-llama-swap"
-        assert d["backups"].name == "llama-swap"
+        assert d.live.name == "llama-swap"
+        assert d.staging.name == "staging-llama-swap"
+        assert d.backups.name == "llama-swap"
 
     def test_llama_cpp_paths(self, tmp_path):
         d = updater.component_dirs(str(tmp_path), "llama-cpp")
-        assert d["live"] == tmp_path / "llama-cpp"
-        assert d["staging"] == tmp_path / "downloads" / "staging-llama-cpp"
-        assert d["backups"] == tmp_path / "backups" / "llama-cpp"
+        assert d.live == tmp_path / "llama-cpp"
+        assert d.staging == tmp_path / "downloads" / "staging-llama-cpp"
+        assert d.backups == tmp_path / "backups" / "llama-cpp"
         # downloads area is shared between components
-        assert d["downloads"] == updater.component_dirs(str(tmp_path))["downloads"]
+        assert d.downloads == updater.component_dirs(str(tmp_path)).downloads
 
 
 class TestDownload:
@@ -184,19 +184,19 @@ class TestSwap:
     def test_first_install_creates_live_no_backup(self, tmp_path):
         root = tmp_path / "root"
         d = updater.component_dirs(str(root))
-        backup = updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"])
+        backup = updater.atomic_swap(d, _stage(root, b"V1"))
         assert backup is None
-        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V1"
+        assert (d.live / "llama-swap.exe").read_bytes() == b"V1"
 
     def test_update_backs_up_and_prunes_to_keep(self, tmp_path):
         root = tmp_path / "root"
         d = updater.component_dirs(str(root))
-        updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"], label="v1")
-        updater.atomic_swap(d["live"], _stage(root, b"V2"), d["backups"], label="v2")
-        updater.atomic_swap(d["live"], _stage(root, b"V3"), d["backups"], label="v3")
-        backups = updater.list_backups(d["backups"])
+        updater.atomic_swap(d, _stage(root, b"V1"), label="v1")
+        updater.atomic_swap(d, _stage(root, b"V2"), label="v2")
+        updater.atomic_swap(d, _stage(root, b"V3"), label="v3")
+        backups = updater.list_backups(d.backups)
         assert len(backups) == 2  # keep=2
-        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V3"
+        assert (d.live / "llama-swap.exe").read_bytes() == b"V3"
         assert not any(b.startswith("llama-swap-v1-") for b in backups)  # oldest pruned
         assert any(b.startswith("llama-swap-v3-") for b in backups)
 
@@ -206,55 +206,55 @@ class TestSwap:
         empty = root / "downloads" / "staging"
         empty.mkdir(parents=True, exist_ok=True)
         with pytest.raises(UpdateError, match="staging"):
-            updater.atomic_swap(d["live"], empty, d["backups"])
+            updater.atomic_swap(d, empty)
 
     def test_update_preserves_config_file(self, tmp_path):
         """The user's llama-swap.yaml must survive the live-dir swap."""
         root = tmp_path / "root"
         d = updater.component_dirs(str(root))
-        updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"], label="v1")
-        (d["live"] / "llama-swap.yaml").write_text("models:\n  a: {}\n")
-        updater.atomic_swap(d["live"], _stage(root, b"V2"), d["backups"], label="v2")
-        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V2"
-        assert (d["live"] / "llama-swap.yaml").read_text() == "models:\n  a: {}\n"
+        updater.atomic_swap(d, _stage(root, b"V1"), label="v1")
+        (d.live / "llama-swap.yaml").write_text("models:\n  a: {}\n")
+        updater.atomic_swap(d, _stage(root, b"V2"), label="v2")
+        assert (d.live / "llama-swap.exe").read_bytes() == b"V2"
+        assert (d.live / "llama-swap.yaml").read_text() == "models:\n  a: {}\n"
 
     def test_first_install_has_nothing_to_preserve(self, tmp_path):
         root = tmp_path / "root"
         d = updater.component_dirs(str(root))
-        backup = updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"])
+        backup = updater.atomic_swap(d, _stage(root, b"V1"))
         assert backup is None
-        assert not (d["live"] / "llama-swap.yaml").exists()
+        assert not (d.live / "llama-swap.yaml").exists()
 
 
 class TestRollback:
     def test_rollback_restores_newest_backup(self, tmp_path):
         root = tmp_path / "root"
         d = updater.component_dirs(str(root))
-        updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"], label="v1")
-        updater.atomic_swap(d["live"], _stage(root, b"V2"), d["backups"], label="v2")
-        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V2"
-        assert updater.rollback(d["live"], d["backups"]) is True
-        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V1"
+        updater.atomic_swap(d, _stage(root, b"V1"), label="v1")
+        updater.atomic_swap(d, _stage(root, b"V2"), label="v2")
+        assert (d.live / "llama-swap.exe").read_bytes() == b"V2"
+        assert updater.rollback(d) is True
+        assert (d.live / "llama-swap.exe").read_bytes() == b"V1"
         # the failed V2 install is parked, not lost
-        parked = [p for p in d["backups"].iterdir() if p.name.endswith(".failed")]
+        parked = [p for p in d.backups.iterdir() if p.name.endswith(".failed")]
         assert len(parked) == 1
         # parked installs don't show up as rollable backups
-        assert not any(n.endswith(".failed") for n in updater.list_backups(d["backups"]))
+        assert not any(n.endswith(".failed") for n in updater.list_backups(d.backups))
 
     def test_rollback_preserves_config_file(self, tmp_path):
         """Config written after an update must survive a rollback too."""
         root = tmp_path / "root"
         d = updater.component_dirs(str(root))
-        updater.atomic_swap(d["live"], _stage(root, b"V1"), d["backups"], label="v1")
-        updater.atomic_swap(d["live"], _stage(root, b"V2"), d["backups"], label="v2")
-        (d["live"] / "llama-swap.yaml").write_text("models:\n  b: {}\n")
-        assert updater.rollback(d["live"], d["backups"]) is True
-        assert (d["live"] / "llama-swap.exe").read_bytes() == b"V1"
-        assert (d["live"] / "llama-swap.yaml").read_text() == "models:\n  b: {}\n"
+        updater.atomic_swap(d, _stage(root, b"V1"), label="v1")
+        updater.atomic_swap(d, _stage(root, b"V2"), label="v2")
+        (d.live / "llama-swap.yaml").write_text("models:\n  b: {}\n")
+        assert updater.rollback(d) is True
+        assert (d.live / "llama-swap.exe").read_bytes() == b"V1"
+        assert (d.live / "llama-swap.yaml").read_text() == "models:\n  b: {}\n"
 
     def test_rollback_without_backups(self, tmp_path):
         d = updater.component_dirs(str(tmp_path / "root"))
-        assert updater.rollback(d["live"], d["backups"]) is False
+        assert updater.rollback(d) is False
 
 
 class TestSweepStaleInstallers:

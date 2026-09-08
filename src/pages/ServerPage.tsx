@@ -2,9 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { bridge, type SwapStatus } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
+import { errText } from '../lib/errors'
 import { fetchLatestRelease, pickAsset, type SwapRelease } from '../lib/llamaSwapRelease'
-import { Progress } from '../components/Progress'
+import { useComponentUpdate } from '../lib/useComponentUpdate'
 import { useUpdateFlow } from '../lib/useUpdateFlow'
+import { Progress } from '../components/Progress'
+import { ConflictDialog } from '../components/ConflictDialog'
 
 interface ServerPageProps {
   cfg: AppConfig
@@ -17,7 +20,6 @@ interface ServerPageProps {
 export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageProps) {
   const [latest, setLatest] = useState<SwapRelease | null>(null)
   const [conflict, setConflict] = useState(false)
-  const [backups, setBackups] = useState<string[]>([])
   const [logs, setLogs] = useState<string[]>([])
   const [showLogs, setShowLogs] = useState(false)
   const [startConflict, setStartConflict] = useState(false)
@@ -27,24 +29,26 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
   const installed = cfg.llamaSwapInstalled
   const portBusy = !!status?.portBusy
 
-  const refresh = async () => {
-    setBackups(await bridge.listComponentBackups('llama-swap'))
-  }
-
   const check = async () => {
     setPhase({ status: 'checking' })
     try {
       setLatest(await fetchLatestRelease())
       setPhase({ status: 'idle' })
     } catch (e) {
-      setPhase({ status: 'error', message: e instanceof Error ? e.message : 'update check failed' })
+      setPhase({ status: 'error', message: errText(e, 'update check failed') })
     }
   }
 
   const { phase, setPhase, setBusy, busyAny, phaseLine, progress } = useUpdateFlow(check)
+  const { backups, refresh, rollback, rollbackLabel } = useComponentUpdate(
+    'llama-swap',
+    setPhase,
+    setBusy,
+    /v(\d+)/,
+    (version) => onSaveConfig({ ...cfg, llamaSwapInstalled: Number(version) }),
+  )
 
   useEffect(() => {
-    void refresh()
     if (cfg.checkUpdatesOnStart) void check()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -98,7 +102,7 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
       })
       await refresh()
     } catch (e) {
-      setPhase({ status: 'error', message: e instanceof Error ? e.message : 'update failed' })
+      setPhase({ status: 'error', message: errText(e, 'update failed') })
     } finally {
       setBusy(false)
     }
@@ -111,26 +115,6 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
       return
     }
     await runUpdate(false)
-  }
-
-  const doRollback = async () => {
-    if (backups.length === 0) return
-    setBusy(true)
-    try {
-      const ok = await bridge.rollbackComponent('llama-swap')
-      if (!ok) {
-        setPhase({ status: 'error', message: 'no backups to roll back to' })
-        return
-      }
-      const m = /v(\d+)/.exec(backups[0])
-      if (m) await onSaveConfig({ ...cfg, llamaSwapInstalled: Number(m[1]) })
-      setPhase({ status: 'done', message: `rolled back to ${backups[0]}` })
-      await refresh()
-    } catch (e) {
-      setPhase({ status: 'error', message: e instanceof Error ? e.message : 'rollback failed' })
-    } finally {
-      setBusy(false)
-    }
   }
 
   // --- start/stop -----------------------------------------------------------
@@ -299,11 +283,11 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
           {backups.length > 0 && (
             <button
               type="button"
-              onClick={() => void doRollback()}
+              onClick={() => void rollback()}
               disabled={busyAny}
               className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
             >
-              {(() => { const m = /v(\d+)/.exec(backups[0]); return m ? `Rollback → v${m[1]}` : 'Rollback' })()}
+              {rollbackLabel}
             </button>
           )}
           {backups.length > 0 && (
@@ -352,51 +336,5 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
         />
       )}
     </>
-  )
-}
-
-function ConflictDialog({
-  title,
-  body,
-  primary,
-  secondary,
-  cancel,
-}: {
-  title: string
-  body: string
-  primary: { label: string; onClick: () => void }
-  secondary: { label: string; onClick: () => void }
-  cancel: { label: string; onClick: () => void }
-}) {
-  return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 px-4">
-      <div className="w-full max-w-md rounded-lg border border-neutral-700 bg-neutral-900 p-5">
-        <h3 className="text-sm font-medium text-neutral-200">{title}</h3>
-        <p className="mt-2 text-sm text-neutral-400">{body}</p>
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={primary.onClick}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-500"
-          >
-            {primary.label}
-          </button>
-          <button
-            type="button"
-            onClick={secondary.onClick}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
-          >
-            {secondary.label}
-          </button>
-          <button
-            type="button"
-            onClick={cancel.onClick}
-            className="rounded-md border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
-          >
-            {cancel.label}
-          </button>
-        </div>
-      </div>
-    </div>
   )
 }

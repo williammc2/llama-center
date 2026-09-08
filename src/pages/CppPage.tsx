@@ -2,9 +2,18 @@ import { useEffect, useState } from 'react'
 import { bridge } from '../lib/bridge'
 import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
-import { assetMeta, checkNightly, companionAsset, requestFromConfig, type NightlyCheck } from '../lib/llamaCppNightly'
-import { Progress } from '../components/Progress'
+import { errText } from '../lib/errors'
+import {
+  assetMeta,
+  buildNum,
+  checkNightly,
+  companionAsset,
+  requestFromConfig,
+  type NightlyCheck,
+} from '../lib/llamaCppNightly'
+import { useComponentUpdate } from '../lib/useComponentUpdate'
 import { useUpdateFlow } from '../lib/useUpdateFlow'
+import { Progress } from '../components/Progress'
 
 interface CppPageProps {
   cfg: AppConfig
@@ -14,11 +23,6 @@ interface CppPageProps {
 
 export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
   const [cpp, setCpp] = useState<NightlyCheck | null>(null)
-  const [backups, setBackups] = useState<string[]>([])
-
-  const refresh = async () => {
-    setBackups(await bridge.listComponentBackups('llama-cpp'))
-  }
 
   const check = async () => {
     if (detection.os === 'unknown' || detection.arch === 'unknown') {
@@ -30,14 +34,20 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
       setCpp(await checkNightly(requestFromConfig(cfg, detection.os, detection.arch)))
       setPhase({ status: 'idle' })
     } catch (e) {
-      setPhase({ status: 'error', message: e instanceof Error ? e.message : 'update check failed' })
+      setPhase({ status: 'error', message: errText(e, 'update check failed') })
     }
   }
 
   const { phase, setPhase, setBusy, busyAny, phaseLine, progress } = useUpdateFlow(check)
+  const { backups, refresh, rollback, rollbackLabel } = useComponentUpdate(
+    'llama-cpp',
+    setPhase,
+    setBusy,
+    /b(\d+)/,
+    (version) => onSaveConfig({ ...cfg, llamaCppInstalled: `b${version}` }),
+  )
 
   useEffect(() => {
-    void refresh()
     if (cfg.checkUpdatesOnStart) void check()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -59,8 +69,8 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
     ? null
     : cfg.llamaCppInstalled === null
       ? 'Install llama.cpp'
-      : Number(build!.tag.slice(1)) > Number(cfg.llamaCppInstalled.slice(1))
-        ? `Update to ${build!.tag}`
+      : build && buildNum(build.tag) > buildNum(cfg.llamaCppInstalled)
+        ? `Update to ${build.tag}`
         : null
 
   const runUpdate = async () => {
@@ -88,27 +98,7 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
       })
       await refresh()
     } catch (e) {
-      setPhase({ status: 'error', message: e instanceof Error ? e.message : 'update failed' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const doRollback = async () => {
-    if (backups.length === 0) return
-    setBusy(true)
-    try {
-      const okRoll = await bridge.rollbackComponent('llama-cpp')
-      if (!okRoll) {
-        setPhase({ status: 'error', message: 'no backups to roll back to' })
-        return
-      }
-      const m = /b(\d+)/.exec(backups[0])
-      if (m) await onSaveConfig({ ...cfg, llamaCppInstalled: `b${m[1]}` })
-      setPhase({ status: 'done', message: `rolled back to ${backups[0]}` })
-      await refresh()
-    } catch (e) {
-      setPhase({ status: 'error', message: e instanceof Error ? e.message : 'rollback failed' })
+      setPhase({ status: 'error', message: errText(e, 'update failed') })
     } finally {
       setBusy(false)
     }
@@ -194,11 +184,11 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
           {backups.length > 0 && (
             <button
               type="button"
-              onClick={() => void doRollback()}
+              onClick={() => void rollback()}
               disabled={busyAny}
               className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
             >
-              {(() => { const m = /b(\d+)/.exec(backups[0]); return m ? `Rollback → b${m[1]}` : 'Rollback' })()}
+              {rollbackLabel}
             </button>
           )}
           {backups.length > 0 && (
@@ -212,7 +202,7 @@ export function CppPage({ cfg, detection, onSaveConfig }: CppPageProps) {
           )}
         </div>
 
-        {ok && cfg.llamaCppInstalled !== null && Number(build!.tag.slice(1)) <= Number(cfg.llamaCppInstalled.slice(1)) && (
+        {ok && build && cfg.llamaCppInstalled !== null && buildNum(build.tag) <= buildNum(cfg.llamaCppInstalled) && (
           <p className="mt-3 text-xs text-emerald-600">Up to date ({cfg.llamaCppInstalled}).</p>
         )}
         {cpp && !cpp.latest && (

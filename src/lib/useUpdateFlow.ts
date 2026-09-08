@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { bridge, type DownloadProgress } from './bridge'
+import { useDownloadProgress } from './useDownloadProgress'
 
 export type Phase =
   | { status: 'idle' }
@@ -19,7 +19,7 @@ export type Phase =
 export function useUpdateFlow(check: () => void) {
   const [phase, setPhase] = useState<Phase>({ status: 'idle' })
   const [busy, setBusy] = useState(false)
-  const [progress, setProgress] = useState<DownloadProgress | null>(null)
+  const progress = useDownloadProgress()
 
   const checkRef = useRef(check)
   checkRef.current = check
@@ -31,17 +31,6 @@ export function useUpdateFlow(check: () => void) {
     }
     return () => {
       delete window.__lcCheckUpdates
-    }
-  }, [])
-
-  // Live download progress (each page only renders it for its own component).
-  useEffect(() => {
-    let off: (() => void) | undefined
-    void bridge.onDownloadProgress(setProgress).then((u) => {
-      off = u
-    })
-    return () => {
-      off?.()
     }
   }, [])
 

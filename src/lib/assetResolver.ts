@@ -95,16 +95,17 @@ export function parseAsset(name: string, sizeMB: number): ParsedAsset | null {
   if (after.length < 2) return null
 
   const osTok = after[0]
-  if (!OS_AFTER_BIN.has(osTok)) return null
+  if (!osTok || !OS_AFTER_BIN.has(osTok)) return null
   const archTok = after[after.length - 1]
-  if (!ARCHS.has(archTok)) return null
+  if (!archTok || !ARCHS.has(archTok)) return null
 
   const middle = after.slice(1, after.length - 1)
   let backend: Backend = 'cpu'
   let version: string | undefined
-  if (middle.length > 0 && BACKENDS.has(middle[0])) {
-    backend = middle[0] as Backend
-    if (VERSIONED.has(middle[0]) && middle.length > 1) version = middle[1]
+  const mid0 = middle[0]
+  if (mid0 !== undefined && BACKENDS.has(mid0)) {
+    backend = mid0 as Backend
+    if (VERSIONED.has(mid0)) version = middle[1]
   }
 
   let cudaMajor: number | undefined
@@ -155,7 +156,10 @@ function versionDesc(a: ParsedAsset, b: ParsedAsset): number {
 }
 
 function pickHighest(pool: ParsedAsset[]): ParsedAsset {
-  return [...pool].sort(versionDesc)[0]
+  const top = [...pool].sort(versionDesc)[0]
+  // Callers only invoke this on non-empty pools (guarded by `length > 0`).
+  if (!top) throw new Error('pickHighest: empty pool')
+  return top
 }
 
 /**

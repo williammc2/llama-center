@@ -15,8 +15,7 @@ from __future__ import annotations
 
 import re
 import shlex
-from dataclasses import dataclass, asdict
-from typing import Optional
+from dataclasses import dataclass
 
 import yaml
 
@@ -33,11 +32,11 @@ class SwapConfigError(ValueError):
 class SwapModel:
     name: str
     model: str
-    mmproj: Optional[str] = None
-    draft: Optional[str] = None
+    mmproj: str | None = None
+    draft: str | None = None
     ctx_size: int = DEFAULT_CTX
     gpu_layers: int = DEFAULT_GPU_LAYERS
-    threads: Optional[int] = None
+    threads: int | None = None
     extra_flags: str = ""
 
 
@@ -82,7 +81,9 @@ def validate_models(models: list[SwapModel]) -> None:
             raise SwapConfigError(f"duplicate model name: {m.name}")
         seen.add(m.name)
         if not re.match(r"^[\w./-]+$", m.name):
-            raise SwapConfigError(f"model name {m.name!r} should be a simple id (letters, digits, - _ . /)")
+            raise SwapConfigError(
+                f"model name {m.name!r} should be a simple id (letters, digits, - _ . /)"
+            )
         if not m.model.strip():
             raise SwapConfigError(f"model {m.name}: a .gguf path is required")
         if m.ctx_size <= 0 or m.gpu_layers <= 0:

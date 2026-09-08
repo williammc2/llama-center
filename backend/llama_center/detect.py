@@ -9,7 +9,6 @@ from __future__ import annotations
 import platform
 import subprocess
 from dataclasses import dataclass, field
-from typing import Optional
 
 BACKENDS_BY_OS = {
     "win": ("cpu", "cuda", "vulkan", "rocm", "sycl", "opencl", "openvino"),
@@ -20,13 +19,13 @@ BACKENDS_BY_OS = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class Detection:
     os: str  # "win" | "linux" | "macos" | "unknown"
     arch: str  # "x64" | "arm64" | "unknown"
     suggest_cuda: bool = False
-    cuda_major_hint: Optional[int] = None  # 12 | 13, from the driver
-    gpu_name: Optional[str] = None
+    cuda_major_hint: int | None = None  # 12 | 13, from the driver
+    gpu_name: str | None = None
     backends: tuple = field(default_factory=tuple)
 
 
@@ -50,7 +49,7 @@ def _map_arch(machine: str) -> str:
     return "unknown"
 
 
-def probe_nvidia(timeout_s: float = 3.0) -> Optional[tuple[int, str]]:
+def probe_nvidia(timeout_s: float = 3.0) -> tuple[int, str] | None:
     """nvidia-smi probe → (cuda_major_hint, gpu_name) or None.
 
     Driver → max CUDA major: 580+ → 13, 525+ → 12, older → 12 (safe default).

@@ -76,6 +76,15 @@ export function assetMeta(build: ParsedBuild, assetName: string): AssetMeta | nu
 }
 
 /**
+ * The numeric build number of a `b####` tag (both the resolved nightly and
+ * the installed version use this form). Replaces the `Number(tag.slice(1))`
+ * that was inlined twice in CppPage.
+ */
+export function buildNum(tag: string): number {
+  return Number(tag.slice(1))
+}
+
+/**
  * Windows CUDA builds ship as TWO assets (verified against b10816):
  *   - the plain build (`llama-b####-bin-win-cuda-<ver>-x64.zip`) — all the
  *     binaries, NO CUDA runtime DLLs;

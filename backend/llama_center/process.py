@@ -10,6 +10,7 @@ Log destinations:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -60,7 +61,8 @@ class LlamaSwapProcess:
 
     @property
     def pid(self) -> int | None:
-        return self._proc.pid if self.running else None
+        proc = self._proc
+        return proc.pid if proc is not None and self.running else None
 
     def start(self) -> int:
         """Spawn. Returns the pid. Raises ProcessError when already running."""
@@ -87,10 +89,8 @@ class LlamaSwapProcess:
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             self._ring.append(line)
             self._logger.info(line)
-        try:
+        with contextlib.suppress(Exception):
             self._proc.stdout.close()
-        except Exception:
-            pass
 
     def stop(self, timeout: float = 10.0) -> int | None:
         """Terminate (SIGTERM / TerminateProcess), wait, kill if needed.
@@ -109,10 +109,8 @@ class LlamaSwapProcess:
                     proc.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    try:
+                    with contextlib.suppress(subprocess.TimeoutExpired):
                         proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        pass
             return proc.returncode
 
     def lines(self, n: int = 200) -> list[str]:

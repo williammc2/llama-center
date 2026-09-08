@@ -23,9 +23,16 @@ import sys
 import tarfile
 import time
 import zipfile
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
+
+# Download progress callback: (received_bytes, total_bytes_or_None).
+ProgressFn = Callable[[int, "int | None"], None]
+# Hook that stops the managed llama-swap (used by launch_installer).
+StopFn = Callable[[], None]
 
 KEEP_BACKUPS = 2
 CHUNK = 1 << 16  # 64 KiB
@@ -54,16 +61,31 @@ class UpdateError(Exception):
     """Anything that aborts an update, with a user-readable message."""
 
 
-def component_dirs(install_dir: str, component: str = "llama-swap") -> dict[str, Path]:
+@dataclass(frozen=True)
+class ComponentDirs:
+    """The managed paths for one install root + component.
+
+    Typed instead of a dict of strings: a typo in a key is a type error,
+    not a runtime KeyError.
+    """
+
+    live: Path
+    downloads: Path
+    staging: Path
+    backups: Path
+    logs: Path
+
+
+def component_dirs(install_dir: str, component: str = "llama-swap") -> ComponentDirs:
     """The managed paths for one install root + component."""
     root = Path(install_dir)
-    return {
-        "live": root / component,
-        "downloads": root / "downloads",
-        "staging": root / "downloads" / f"staging-{component}",
-        "backups": root / "backups" / component,
-        "logs": root / "logs",
-    }
+    return ComponentDirs(
+        live=root / component,
+        downloads=root / "downloads",
+        staging=root / "downloads" / f"staging-{component}",
+        backups=root / "backups" / component,
+        logs=root / "logs",
+    )
 
 
 def sha256_file(path: Path) -> str:
@@ -79,7 +101,7 @@ def download(
     dest: Path,
     expected_sha256: str | None = None,
     timeout: float = 60.0,
-    progress: "callable | None" = None,
+    progress: ProgressFn | None = None,
 ) -> Path:
     """Stream `url` to `dest` (via a .part file), verify SHA-256, rename into place.
 
@@ -116,7 +138,9 @@ def download(
         actual = sha256_file(part)
         if actual != expected_sha256.lower():
             part.unlink(missing_ok=True)
-            raise UpdateError(f"checksum mismatch: expected {expected_sha256.lower()}, got {actual}")
+            raise UpdateError(
+                f"checksum mismatch: expected {expected_sha256.lower()}, got {actual}"
+            )
     if dest.exists():
         dest.unlink()
     part.replace(dest)
@@ -168,14 +192,12 @@ def _backup_name(component: str, label: str | None) -> str:
 
 
 def atomic_swap(
-    live: Path,
+    dirs: ComponentDirs,
     staging_content: Path,
-    backups: Path,
     keep: int = KEEP_BACKUPS,
     label: str | None = None,
-    component: str = "llama-swap",
 ) -> str | None:
-    """Move staged content into `live`; the previous live goes to `backups`.
+    """Move staged content into the live dir; the previous live goes to backups.
 
     `label` (e.g. "v253" / "b10816") records what is being replaced, so a
     later rollback can restore the version. Returns the backup dir name, or
@@ -186,6 +208,8 @@ def atomic_swap(
     the move and restored on top of the new install — the user's models
     config survives every update.
     """
+    live, backups = dirs.live, dirs.backups
+    component = backups.name  # backups live under <root>/backups/<component>
     if not staging_content.is_dir() or not any(staging_content.iterdir()):
         raise UpdateError("swap: staging is missing or empty")
     backups.mkdir(parents=True, exist_ok=True)
@@ -221,12 +245,13 @@ def list_backups(backups: Path) -> list[str]:
     )
 
 
-def rollback(live: Path, backups: Path) -> bool:
-    """Restore the newest backup into `live`. False when no backup exists.
+def rollback(dirs: ComponentDirs) -> bool:
+    """Restore the newest backup into the live dir. False when no backup exists.
 
     The failed live install is parked next to the backups (`.failed` suffix)
     so nothing is lost.
     """
+    live, backups = dirs.live, dirs.backups
     names = list_backups(backups)
     if not names:
         return False
@@ -304,8 +329,8 @@ def stop_llama_swap() -> bool:
 
 def launch_installer(
     url: str,
-    stop_managed: "callable | None" = None,
-    progress: "callable | None" = None,
+    stop_managed: StopFn | None = None,
+    progress: ProgressFn | None = None,
 ) -> None:
     """Download the app installer to the system temp dir and launch it.
 

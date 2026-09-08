@@ -8,6 +8,7 @@ straight to the tray (PLAN: "start with system" = L1).
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from pathlib import Path
@@ -46,10 +47,8 @@ def set_windows(enabled: bool) -> None:
         if enabled:
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, cmd)
         else:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 winreg.DeleteValue(key, APP_NAME)
-            except FileNotFoundError:
-                pass
 
 
 def set_linux(enabled: bool) -> None:
@@ -59,10 +58,8 @@ def set_linux(enabled: bool) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(_DESKTOP_TMPL.format(cmd=launch_cmd()), encoding="utf-8")
     else:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             path.unlink()
-        except FileNotFoundError:
-            pass
 
 
 def apply(enabled: bool) -> None:

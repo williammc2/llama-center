@@ -10,28 +10,28 @@ as before; the split only organizes the Python side by responsibility:
   SwapConfigApi  the llama-swap models config: save, read, import
   AppUpdateApi   the app's own installer download/launch
 
-Each mixin is small enough to read in one sitting; none holds app state
-except ProcessApi (``self._managed``), which the composed ``Api.__init__``
-initializes.
+Shared state and helpers live in ``_ApiBase`` so every mixin reads in
+isolation: ``_managed`` (the one-and-only managed process), ``_force_close``
+(the self-update close hook, set by the composed Api), and the config/
+progress helpers the mixins share.
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
-import subprocess
 import threading
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
 import requests
-
 import webview
 
-from llama_center import autostart
+from llama_center import autostart, launch, updater
 from llama_center import process as proc
 from llama_center import swapconfig as swc
-from llama_center import updater
 from llama_center.config import (
     AppConfig,
     ConfigError,
@@ -42,78 +42,19 @@ from llama_center.config import (
 from llama_center.detect import detect
 
 
-class ConfigApi:
-    """Config read/write + detection — the camelCase boundary (P0)."""
+class _ApiBase:
+    """Shared state + helpers for the API mixins.
 
-    def get_detection(self) -> dict:
-        d = detect()
-        return {
-            "os": d.os,
-            "arch": d.arch,
-            "suggestCuda": d.suggest_cuda,
-            "cudaMajorHint": d.cuda_major_hint,
-            "gpuName": d.gpu_name,
-            "backends": list(d.backends),
-        }
+    The composed ``Api`` (main.py) inherits it along with the five mixins;
+    tests construct ``Api()`` and set ``_force_close`` there.
+    """
 
-    def get_config(self):
-        """Current config as a dict (camelCase, matching the TS shape) or None."""
-        try:
-            cfg = load_config()
-        except ConfigError:
-            return {"error": "corrupt"}
-        return self._to_camel(cfg)
+    _managed: proc.LlamaSwapProcess | None = None
+    _force_close: Callable[[], None] | None = None
 
-    def save_config(self, raw: dict) -> dict:
-        """Validate + persist. Returns {path} or {error}.
+    # --- shared helpers ---------------------------------------------------
 
-        Also applies the autostart entry so the toggle takes effect at once.
-        """
-        try:
-            cfg = parse_config(self._from_camel(raw))
-            path = save_config(cfg)
-        except ConfigError as e:
-            return {"error": str(e)}
-        try:
-            autostart.apply(cfg.start_with_system)
-        except Exception:
-            pass  # autostart is best-effort; the config save is what matters
-        return {"path": path}
-
-    # --- shape conversion -------------------------------------------------
-    # UI speaks camelCase (TS), Python speaks snake_case (PEP8). One place
-    # owns the mapping.
-    _KEY_MAP = {
-        "firstRunDone": "first_run_done",
-        "installDir": "install_dir",
-        "cudaMajor": "cuda_major",
-        "cudaFamily": "cuda_family",
-        "llamaCppPin": "llama_cpp_pin",
-        "llamaCppInstalled": "llama_cpp_installed",
-        "llamaSwapPort": "llama_swap_port",
-        "llamaSwapInstalled": "llama_swap_installed",
-        "startWithSystem": "start_with_system",
-        "autoStartLlamaSwap": "auto_start_llama_swap",
-        "closeToTray": "close_to_tray",
-        "checkUpdatesOnStart": "check_updates_on_start",
-    }
-
-    def _from_camel(self, raw: dict) -> dict:
-        out = {}
-        for k, v in raw.items():
-            out[self._KEY_MAP.get(k, k)] = v
-        return out
-
-    def _to_camel(self, cfg: AppConfig) -> dict:
-        d = cfg.to_dict()
-        rev = {v: k for k, v in self._KEY_MAP.items()}
-        return {rev.get(k, k): v for k, v in d.items()}
-
-
-class ComponentApi:
-    """Component install/update: download, stage, swap, rollback (P1)."""
-
-    def _dirs(self, component: str = "llama-swap") -> dict:
+    def _dirs(self, component: str = "llama-swap") -> updater.ComponentDirs:
         """Managed paths for the configured install dir. Raises ConfigError."""
         cfg = load_config()
         if not cfg.install_dir:
@@ -150,6 +91,77 @@ class ComponentApi:
             else:
                 entry.unlink(missing_ok=True)
 
+
+class ConfigApi(_ApiBase):
+    """Config read/write + detection — the camelCase boundary (P0)."""
+
+    def get_detection(self) -> dict:
+        d = detect()
+        return {
+            "os": d.os,
+            "arch": d.arch,
+            "suggestCuda": d.suggest_cuda,
+            "cudaMajorHint": d.cuda_major_hint,
+            "gpuName": d.gpu_name,
+            "backends": list(d.backends),
+        }
+
+    def get_config(self):
+        """Current config as a dict (camelCase, matching the TS shape) or None."""
+        try:
+            cfg = load_config()
+        except ConfigError:
+            return {"error": "corrupt"}
+        return self._to_camel(cfg)
+
+    def save_config(self, raw: dict) -> dict:
+        """Validate + persist. Returns {path} or {error}.
+
+        Also applies the autostart entry so the toggle takes effect at once.
+        """
+        try:
+            cfg = parse_config(self._from_camel(raw))
+            path = save_config(cfg)
+        except ConfigError as e:
+            return {"error": str(e)}
+        # autostart is best-effort; the config save is what matters
+        with contextlib.suppress(Exception):
+            autostart.apply(cfg.start_with_system)
+        return {"path": path}
+
+    # --- shape conversion -------------------------------------------------
+    # UI speaks camelCase (TS), Python speaks snake_case (PEP8). One place
+    # owns the mapping.
+    _KEY_MAP = {
+        "firstRunDone": "first_run_done",
+        "installDir": "install_dir",
+        "cudaMajor": "cuda_major",
+        "cudaFamily": "cuda_family",
+        "llamaCppPin": "llama_cpp_pin",
+        "llamaCppInstalled": "llama_cpp_installed",
+        "llamaSwapPort": "llama_swap_port",
+        "llamaSwapInstalled": "llama_swap_installed",
+        "startWithSystem": "start_with_system",
+        "autoStartLlamaSwap": "auto_start_llama_swap",
+        "closeToTray": "close_to_tray",
+        "checkUpdatesOnStart": "check_updates_on_start",
+    }
+
+    def _from_camel(self, raw: dict) -> dict:
+        out = {}
+        for k, v in raw.items():
+            out[self._KEY_MAP.get(k, k)] = v
+        return out
+
+    def _to_camel(self, cfg: AppConfig) -> dict:
+        d = cfg.to_dict()
+        rev = {v: k for k, v in self._KEY_MAP.items()}
+        return {rev.get(k, k): v for k, v in d.items()}
+
+
+class ComponentApi(_ApiBase):
+    """Component install/update: download, stage, swap, rollback (P1)."""
+
     def download_and_stage(
         self, component: str, url: str, sha256: str | None = None, into: str | None = None
     ) -> dict:
@@ -162,7 +174,7 @@ class ComponentApi:
         try:
             d = self._dirs(component)
             name = url.rsplit("/", 1)[-1].split("?")[0] or component
-            archive = d["downloads"] / name
+            archive = d.downloads / name
 
             def _on_progress(received: int, total: int | None) -> None:
                 self._push_progress(
@@ -173,7 +185,7 @@ class ComponentApi:
             if into:
                 content = updater.extract(archive, Path(into), merge=True)
             else:
-                content = updater.extract(archive, d["staging"])
+                content = updater.extract(archive, d.staging)
             return {"staging": str(content)}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
@@ -187,9 +199,9 @@ class ComponentApi:
         try:
             d = self._dirs(component)
             backup = updater.atomic_swap(
-                d["live"], d["staging"], d["backups"], label=self._installed_label(component), component=component
+                d, d.staging, label=self._installed_label(component)
             )
-            self._clean_downloads(d["downloads"])
+            self._clean_downloads(d.downloads)
             return {"backup": backup}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
@@ -198,14 +210,14 @@ class ComponentApi:
         """Restore the newest backup. Returns {rolledBack: bool} or {error}."""
         try:
             d = self._dirs(component)
-            return {"rolledBack": updater.rollback(d["live"], d["backups"])}
+            return {"rolledBack": updater.rollback(d)}
         except (ConfigError, updater.UpdateError, OSError) as e:
             return {"error": str(e)}
 
     def list_component_backups(self, component: str) -> list:
         """Backup dir names, newest first. [] when none (or no config)."""
         try:
-            return updater.list_backups(self._dirs(component)["backups"])
+            return updater.list_backups(self._dirs(component).backups)
         except ConfigError:
             return []
 
@@ -214,16 +226,16 @@ class ComponentApi:
         return updater.probe_port(port)
 
 
-class ProcessApi:
+class ProcessApi(_ApiBase):
     """The managed llama-swap process: start, stop, status, logs (P3).
 
     Holds the one-and-only managed process as instance state (``self._managed``)
     — initialized by the composed Api, not by this mixin.
     """
 
-    def _exe(self, d: dict) -> Path | None:
+    def _exe(self, d: updater.ComponentDirs) -> Path | None:
         name = "llama-swap.exe" if os.name == "nt" else "llama-swap"
-        p = d["live"] / name
+        p = d.live / name
         return p if p.exists() else None
 
     def start_llama_swap(self) -> dict:
@@ -245,14 +257,20 @@ class ProcessApi:
         if updater.probe_port(cfg.llama_swap_port):
             return {"error": "port-in-use", "port": cfg.llama_swap_port}
         config_file = next(
-            (d["live"] / n for n in ("llama-swap.json", swc.CONFIG_NAME) if (d["live"] / n).exists()),
+            (d.live / n for n in ("llama-swap.json", swc.CONFIG_NAME) if (d.live / n).exists()),
             None,
         )
         if config_file is None:
             return {"error": "no-config"}
-        cmd = [str(exe), "--listen", f"localhost:{cfg.llama_swap_port}", "--config", str(config_file)]
+        cmd = [
+            str(exe),
+            "--listen",
+            f"localhost:{cfg.llama_swap_port}",
+            "--config",
+            str(config_file),
+        ]
         try:
-            self._managed = proc.LlamaSwapProcess(cmd, d["live"], d["logs"])
+            self._managed = proc.LlamaSwapProcess(cmd, d.live, d.logs)
             return {"pid": self._managed.start()}
         except proc.ProcessError as e:
             return {"error": str(e)}
@@ -280,6 +298,7 @@ class ProcessApi:
             cfg = None
         port = cfg.llama_swap_port if cfg else 8085
         managed = self._managed is not None and self._managed.running
+        pid = self._managed.pid if (self._managed is not None and managed) else None
         healthy = updater.health_ok(port)
         port_busy = healthy or updater.probe_port(port)
         models: list[dict] = []
@@ -294,7 +313,7 @@ class ProcessApi:
                 pass
         return {
             "managed": managed,
-            "pid": self._managed.pid if managed else None,
+            "pid": pid,
             "portBusy": port_busy,
             "healthy": healthy,
             "models": models,
@@ -307,11 +326,11 @@ class ProcessApi:
         return []
 
 
-class SwapConfigApi:
+class SwapConfigApi(_ApiBase):
     """The llama-swap models config: save, read, import (P4)."""
 
     def _llama_server_path(self, install_dir: str) -> Path:
-        return updater.component_dirs(install_dir, "llama-cpp")["live"] / (
+        return updater.component_dirs(install_dir, "llama-cpp").live / (
             "llama-server.exe" if os.name == "nt" else "llama-server"
         )
 
@@ -369,7 +388,7 @@ class SwapConfigApi:
             text = swc.render_yaml(self._models_from_camel(models), str(server))
         except swc.SwapConfigError as e:
             return {"error": str(e)}
-        p = d["live"] / swc.CONFIG_NAME
+        p = d.live / swc.CONFIG_NAME
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")
         return {"path": str(p)}
@@ -380,7 +399,7 @@ class SwapConfigApi:
             d = self._dirs("llama-swap")
         except ConfigError:
             return {"models": [], "path": None}
-        p = d["live"] / swc.CONFIG_NAME
+        p = d.live / swc.CONFIG_NAME
         if not p.exists():
             return {"models": [], "path": None}
         try:
@@ -403,34 +422,19 @@ class SwapConfigApi:
             return {"error": "no models found in that file"}
         return {"models": self._models_to_camel(models)}
 
-    def _open(self, target: str) -> dict:
-        """Open a URL or path with the OS default handler."""
-        try:
-            if os.name == "nt":
-                os.startfile(target)  # type: ignore[attr-defined]
-            else:
-                subprocess.Popen(
-                    ["xdg-open", target],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            return {"opened": True}
-        except Exception as e:
-            return {"error": str(e)}
-
     def open_url(self, url: str) -> dict:
         """Open a URL in the default browser (the server dashboard link)."""
-        return self._open(url)
+        return launch.open_target(url)
 
     def open_path(self, path: str) -> dict:
         """Open a folder in the OS file explorer."""
-        return self._open(path)
+        return launch.open_target(path)
 
 
-class AppUpdateApi:
+class AppUpdateApi(_ApiBase):
     """The app's own installer: download + launch (P5 self-update).
 
-    `self._force_close` is injected by the composed Api (main.py owns the
+    ``self._force_close`` is injected by the composed Api (main.py owns the
     window-destroy logic; this mixin only schedules it).
     """
 
@@ -445,7 +449,14 @@ class AppUpdateApi:
         """
 
         def _on_progress(received: int, total: int | None) -> None:
-            self._push_progress({"component": "app", "file": url.rsplit("/", 1)[-1], "received": received, "total": total})
+            self._push_progress(
+                {
+                    "component": "app",
+                    "file": url.rsplit("/", 1)[-1],
+                    "received": received,
+                    "total": total,
+                }
+            )
 
         def _stop_managed() -> None:
             # Stop the managed llama-swap NOW (not at atexit) so this process
@@ -459,7 +470,8 @@ class AppUpdateApi:
         try:
             updater.launch_installer(url, stop_managed=_stop_managed, progress=_on_progress)
             # Force-quit the app after 1s (lets the installer/script start first)
-            threading.Timer(1.0, self._force_close).start()
+            if self._force_close is not None:
+                threading.Timer(1.0, self._force_close).start()
             return {"launched": True, "closing": True}
         except (updater.UpdateError, OSError) as e:
             return {"error": str(e)}

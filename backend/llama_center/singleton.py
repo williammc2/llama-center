@@ -19,11 +19,14 @@ instance blocks on the event; the second instance sets it and exits.
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import shutil
 import socket
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 if os.name == "nt":
@@ -34,6 +37,12 @@ else:
 
 from llama_center.paths import data_root
 
+# IPC command callback (first instance only).
+Callback = Callable[[str], None]
+
+# Windows: OpenEventW access right for setting the event.
+EVENT_MODIFY_STATE = 0x0002
+
 
 def _scope() -> str:
     """Per-user scope so per-user installs don't collide across users."""
@@ -41,7 +50,7 @@ def _scope() -> str:
         import getpass
 
         return getpass.getuser()
-    return str(os.getuid())
+    return str(os.getuid())  # type: ignore[attr-defined]  # POSIX-only
 
 
 class Singleton:
@@ -65,10 +74,10 @@ class Singleton:
         self._name = name
         self._scope = _scope()
         self._mutex = None  # Windows mutex handle
-        self._lock_file = None  # Linux lock file handle
+        self._lock_file: io.TextIOWrapper | None = None  # Linux lock file handle
         self._listener: threading.Thread | None = None
         self._stop = threading.Event()
-        self._on_command: "callable | None" = None
+        self._on_command: Callback | None = None
 
     # ------------------------------------------------------------------ acquire
     def acquire(self) -> bool:
@@ -85,9 +94,10 @@ class Singleton:
             return True
         path = data_root() / f".{self._name}.lock"
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock_file = open(path, "a+")
+        # The handle must persist: the flock lives on the fd, so no context manager.
+        self._lock_file = open(path, "a+")  # noqa: SIM115
         try:
-            fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[attr-defined]
         except (BlockingIOError, OSError):
             self._lock_file.close()
             self._lock_file = None
@@ -120,7 +130,6 @@ class Singleton:
             return False
         k32 = ctypes.windll.kernel32
         k32.OpenEventW.restype = ctypes.c_void_p
-        EVENT_MODIFY_STATE = 0x0002
         h = k32.OpenEventW(EVENT_MODIFY_STATE, False, self._event_name())
         if h is None:
             return False
@@ -135,7 +144,7 @@ class Singleton:
     def _signal_unix(self, cmd: str) -> bool:
         sock_path = data_root() / f".{self._name}.sock"
         try:
-            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined]
             s.settimeout(1.0)
             s.connect(str(sock_path))
             s.sendall(cmd.encode("ascii"))
@@ -145,7 +154,7 @@ class Singleton:
             return False
 
     # ------------------------------------------------------------------ listen
-    def start_listening(self, on_command: "callable") -> None:
+    def start_listening(self, on_command: Callback) -> None:
         """Run the IPC listener in a daemon thread (first instance only)."""
         self._on_command = on_command
         self._listener = threading.Thread(target=self._run, daemon=True)
@@ -177,11 +186,9 @@ class Singleton:
 
     def _listen_unix(self) -> None:
         sock_path = data_root() / f".{self._name}.sock"
-        try:
+        with contextlib.suppress(FileNotFoundError):
             sock_path.unlink()
-        except FileNotFoundError:
-            pass
-        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)  # type: ignore[attr-defined]
         try:
             server.bind(str(sock_path))
             server.listen(4)
@@ -189,7 +196,7 @@ class Singleton:
             while not self._stop.is_set():
                 try:
                     conn, _ = server.accept()
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 except OSError:
                     break
@@ -200,33 +207,25 @@ class Singleton:
                     conn.close()
         finally:
             server.close()
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 sock_path.unlink()
-            except FileNotFoundError:
-                pass
 
     def _dispatch(self, cmd: str) -> None:
         if self._on_command and cmd:
-            try:
+            with contextlib.suppress(Exception):  # never let the listener die on a bad callback
                 self._on_command(cmd)
-            except Exception:
-                pass  # never let the listener die on a bad callback
 
     # ------------------------------------------------------------------ release
     def release(self) -> None:
         self._stop.set()
         if self._mutex is not None:
-            try:
+            with contextlib.suppress(Exception):
                 ctypes.windll.kernel32.CloseHandle(self._mutex)
-            except Exception:
-                pass
             self._mutex = None
         if self._lock_file is not None:
-            try:
-                fcntl.flock(self._lock_file, fcntl.LOCK_UN)
+            with contextlib.suppress(Exception):
+                fcntl.flock(self._lock_file, fcntl.LOCK_UN)  # type: ignore[attr-defined]
                 self._lock_file.close()
-            except Exception:
-                pass
             self._lock_file = None
 
 
@@ -285,7 +284,5 @@ def wipe_webview_profile() -> None:
     d = webview_profile_dir()
     if not d.exists():
         return
-    try:
+    with contextlib.suppress(Exception):
         shutil.rmtree(d, ignore_errors=True)
-    except Exception:
-        pass

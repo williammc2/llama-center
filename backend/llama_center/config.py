@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 from llama_center.paths import data_root
 
@@ -35,12 +34,12 @@ class AppConfig:
     first_run_done: bool = False
     install_dir: str = ""
     backend: str = "cpu"
-    cuda_major: Optional[int] = None  # 12 | 13, only when backend == "cuda"
+    cuda_major: int | None = None  # 12 | 13, only when backend == "cuda"
     cuda_family: str = "cudart"
-    llama_cpp_pin: Optional[str] = None  # e.g. "b10814"; None = latest-with-asset
-    llama_cpp_installed: Optional[str] = None  # e.g. "b10816"; None = not installed yet
+    llama_cpp_pin: str | None = None  # e.g. "b10814"; None = latest-with-asset
+    llama_cpp_installed: str | None = None  # e.g. "b10816"; None = not installed yet
     llama_swap_port: int = 8085
-    llama_swap_installed: Optional[int] = None  # e.g. 253; None = not installed yet
+    llama_swap_installed: int | None = None  # e.g. 253; None = not installed yet
     lang: str = "en"
     start_with_system: bool = False
     auto_start_llama_swap: bool = False
@@ -110,6 +109,15 @@ def parse_config(raw: object) -> AppConfig:
     cuda_family = raw.get("cuda_family")
     cuda_family = cuda_family if cuda_family in CUDA_FAMILIES else "cudart"
 
+    def _pos_int_or_none(key: str) -> int | None:
+        """Positive int or None/null — anything else (incl. bool) is corrupt."""
+        v = raw.get(key)
+        if v is None:
+            return None
+        if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
+            raise ConfigError(f"config: {key} must be a positive int or null, got {v!r}")
+        return v
+
     port = raw.get("llama_swap_port")
     if port is None:
         port = 8085
@@ -117,12 +125,7 @@ def parse_config(raw: object) -> AppConfig:
     if isinstance(port, bool) or not isinstance(port, int) or port <= 0:
         raise ConfigError(f"config: llama_swap_port must be a positive int, got {port!r}")
 
-    swap_installed = raw.get("llama_swap_installed")
-    if swap_installed is not None:
-        if isinstance(swap_installed, bool) or not isinstance(swap_installed, int) or swap_installed <= 0:
-            raise ConfigError(
-                f"config: llama_swap_installed must be a positive int or null, got {swap_installed!r}"
-            )
+    swap_installed = _pos_int_or_none("llama_swap_installed")
 
     install_dir = raw.get("install_dir", "")
     if not isinstance(install_dir, str):
@@ -135,7 +138,9 @@ def parse_config(raw: object) -> AppConfig:
 
     cpp_installed = raw.get("llama_cpp_installed")
     if cpp_installed is not None and not isinstance(cpp_installed, str):
-        raise ConfigError(f"config: llama_cpp_installed must be a string or null, got {cpp_installed!r}")
+        raise ConfigError(
+            f"config: llama_cpp_installed must be a string or null, got {cpp_installed!r}"
+        )
 
     def _bool(key: str, dflt: bool) -> bool:
         v = raw.get(key)

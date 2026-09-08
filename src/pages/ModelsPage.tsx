@@ -6,6 +6,7 @@ import {
   groupHasValues,
   type FlagGroups,
 } from '../lib/flagGroups'
+import { inputCls, selectCls, FlagToggle } from '../components/ui'
 
 const emptyModel = (): SwapModelDef => ({
   name: '',
@@ -18,6 +19,24 @@ const emptyModel = (): SwapModelDef => ({
   extraFlags: '',
 })
 
+/**
+ * A model row in the editor: the bridge shape plus a stable `id`.
+ *
+ * `id` is local-only (stripped before save). It exists because the list used
+ * to key React nodes and the open/section state by ARRAY INDEX — removing
+ * model #1 made #2 inherit #1's expanded state and flag sections. A stable
+ * id survives reordering/removal. Not part of `SwapModelDef` so the bridge
+ * (and Python) never see it.
+ */
+type ModelRow = SwapModelDef & { id: number }
+
+let nextId = 0
+const withId = (m: SwapModelDef): ModelRow => ({ ...m, id: nextId++ })
+const stripId = (m: ModelRow): SwapModelDef => {
+  const { id: _id, ...rest } = m
+  return rest
+}
+
 function modelErrors(m: SwapModelDef, all: SwapModelDef[]): Record<string, string> {
   const e: Record<string, string> = {}
   if (!m.name.trim()) e.name = 'required'
@@ -28,12 +47,6 @@ function modelErrors(m: SwapModelDef, all: SwapModelDef[]): Record<string, strin
   if (m.threads != null && !(m.threads > 0)) e.threads = 'must be > 0'
   return e
 }
-
-const inputCls =
-  'w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-sky-600 focus:outline-none'
-
-const selectCls =
-  'rounded border border-neutral-700 bg-neutral-950 px-2 py-1 font-mono text-xs text-neutral-200 focus:border-sky-600 focus:outline-none'
 
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
@@ -113,62 +126,46 @@ function NumInput({
   )
 }
 
-/** Toggle (checkbox) for a boolean flag. */
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string
-  checked: boolean | undefined
-  onChange: (v: boolean | undefined) => void
-}) {
-  return (
-    <label className="flex items-center gap-2 text-xs text-neutral-300">
-      <input
-        type="checkbox"
-        checked={checked ?? false}
-        onChange={(e) => onChange(e.target.checked ? true : undefined)}
-        className="h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-950"
-      />
-      {label}
-    </label>
-  )
-}
-
 /** The llama-swap models editor: one collapsible box per model with
  *  structured flag sections replacing the raw extra_flags textarea. */
 export function ModelsPage() {
-  const [models, setModels] = useState<SwapModelDef[]>([emptyModel()])
+  const [models, setModels] = useState<ModelRow[]>([withId(emptyModel())])
   const [loaded, setLoaded] = useState(false)
   const [importPath, setImportPath] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  // Expanded state is keyed by the model's stable `id` (not its array index —
+  // removing a model must not make the next one inherit its open state).
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     void bridge
       .getLlamaSwapConfig()
-      .then((r) => setModels(r.models.length ? r.models : [emptyModel()]))
+      .then((r) => setModels(r.models.length ? r.models.map(withId) : [withId(emptyModel())]))
       .finally(() => setLoaded(true))
   }, [])
 
-  const toggle = (i: number) => setOpen((o) => ({ ...o, [i]: !o[i] }))
+  const toggle = (id: number) => setOpen((o) => ({ ...o, [id]: !o[id] }))
   const toggleSection = (key: string) => setSectionOpen((o) => ({ ...o, [key]: !o[key] }))
 
-  const set = (i: number, patch: Partial<SwapModelDef>) =>
-    setModels((ms) => ms.map((m, j) => (j === i ? { ...m, ...patch } : m)))
+  const set = (id: number, patch: Partial<SwapModelDef>) =>
+    setModels((ms) => ms.map((m) => (m.id === id ? { ...m, ...patch } : m)))
 
   const allErrors = models.map((m) => modelErrors(m, models))
   const hasErrors = allErrors.some((e) => Object.keys(e).length > 0)
   const hasModel = models.some((m) => m.name.trim() || m.model.trim())
+  // Errors keyed by the model's stable id (allErrors is index-aligned with
+  // models; a Map lets render look them up without the index).
+  const errorsById = new Map(models.map((m, i) => [m.id, allErrors[i]]))
 
   const save = async () => {
     setSaving(true)
     setMsg(null)
     try {
-      const res = await bridge.saveLlamaSwapConfig(models.filter((m) => m.name.trim()))
+      const res = await bridge.saveLlamaSwapConfig(
+        models.filter((m) => m.name.trim()).map(stripId),
+      )
       if (res.error) setMsg({ kind: 'err', text: res.error })
       else setMsg({ kind: 'ok', text: `saved → ${res.path}` })
     } catch (e) {
@@ -183,16 +180,16 @@ export function ModelsPage() {
     const res = await bridge.importLlamaSwapConfig(importPath.trim())
     if (res.error) setMsg({ kind: 'err', text: res.error })
     else if (res.models) {
-      setModels(res.models)
+      setModels(res.models.map(withId))
       setMsg({ kind: 'ok', text: `imported ${res.models.length} model(s) — review and save` })
     }
   }
 
   /** Render the structured flag sections for a model. */
-  function renderFlagSections(i: number, m: SwapModelDef) {
+  function renderFlagSections(m: ModelRow) {
     const g = parseFlagGroups(m.extraFlags)
     const has = groupHasValues(g)
-    const prefix = `m${i}`
+    const prefix = `m${m.id}`
 
     const sections: { key: string; title: string; summary: string; content: ReactNode }[] = []
 
@@ -208,27 +205,27 @@ export function ModelsPage() {
               <NumInput
                 value={g.sampling.temp}
                 step={0.1}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.temp = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.temp = v }) })}
               />
             </Field>
             <Field label="top_p">
               <NumInput
                 value={g.sampling.topP}
                 step={0.05}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.topP = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.topP = v }) })}
               />
             </Field>
             <Field label="top_k">
               <NumInput
                 value={g.sampling.topK}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.topK = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.topK = v }) })}
               />
             </Field>
             <Field label="min_p">
               <NumInput
                 value={g.sampling.minP}
                 step={0.05}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.minP = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.sampling.minP = v }) })}
               />
             </Field>
           </div>
@@ -249,7 +246,7 @@ export function ModelsPage() {
                 className={selectCls}
                 value={g.specDecoding.type ?? ''}
                 onChange={(e) =>
-                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.specDecoding.type = e.target.value || undefined }) })
+                  set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.specDecoding.type = e.target.value || undefined }) })
                 }
               >
                 <option value="">(none)</option>
@@ -262,7 +259,7 @@ export function ModelsPage() {
             <Field label="n-max">
               <NumInput
                 value={g.specDecoding.nMax}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.specDecoding.nMax = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.specDecoding.nMax = v }) })}
               />
             </Field>
           </div>
@@ -282,7 +279,7 @@ export function ModelsPage() {
               className={selectCls}
               value={g.flashAttention.enabled == null ? '' : g.flashAttention.enabled ? 'on' : 'off'}
               onChange={(e) =>
-                set(i, {
+                set(m.id, {
                   extraFlags: updateFlags(m.extraFlags, (gg) => {
                     gg.flashAttention.enabled = e.target.value === '' ? undefined : e.target.value === 'on'
                   }),
@@ -311,7 +308,7 @@ export function ModelsPage() {
                 className={selectCls}
                 value={g.kvCache.typeK ?? ''}
                 onChange={(e) =>
-                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeK = e.target.value || undefined }) })
+                  set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeK = e.target.value || undefined }) })
                 }
               >
                 {KV_TYPES.map((v) => (
@@ -324,7 +321,7 @@ export function ModelsPage() {
                 className={selectCls}
                 value={g.kvCache.typeV ?? ''}
                 onChange={(e) =>
-                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeV = e.target.value || undefined }) })
+                  set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.kvCache.typeV = e.target.value || undefined }) })
                 }
               >
                 {KV_TYPES.map((v) => (
@@ -348,13 +345,13 @@ export function ModelsPage() {
             <Field label="parallel">
               <NumInput
                 value={g.batching.parallel}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.batching.parallel = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.batching.parallel = v }) })}
               />
             </Field>
             <Field label="threads-batch">
               <NumInput
                 value={g.batching.threadsBatch}
-                onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.batching.threadsBatch = v }) })}
+                onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.batching.threadsBatch = v }) })}
               />
             </Field>
           </div>
@@ -370,22 +367,22 @@ export function ModelsPage() {
         summary: g.reasoning.effort ?? '',
         content: (
           <div className="space-y-2">
-            <Toggle
+            <FlagToggle
               label="preserve"
               checked={g.reasoning.preserve}
-              onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.preserve = v }) })}
+              onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.preserve = v }) })}
             />
-            <Toggle
+            <FlagToggle
               label="jinja"
               checked={g.reasoning.jinja}
-              onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.jinja = v }) })}
+              onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.jinja = v }) })}
             />
             <Field label="effort">
               <select
                 className={selectCls}
                 value={g.reasoning.effort ?? ''}
                 onChange={(e) =>
-                  set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.effort = e.target.value || undefined }) })
+                  set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.reasoning.effort = e.target.value || undefined }) })
                 }
               >
                 <option value="">(default)</option>
@@ -409,7 +406,7 @@ export function ModelsPage() {
           <Field label="image-min-tokens">
             <NumInput
               value={g.image.minTokens}
-              onChange={(v) => set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.image.minTokens = v }) })}
+              onChange={(v) => set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.image.minTokens = v }) })}
             />
           </Field>
         ),
@@ -440,7 +437,7 @@ export function ModelsPage() {
             className={inputCls + ' h-14 resize-y'}
             value={g.custom}
             onChange={(e) =>
-              set(i, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.custom = e.target.value }) })
+              set(m.id, { extraFlags: updateFlags(m.extraFlags, (gg) => { gg.custom = e.target.value }) })
             }
             placeholder="--any-custom-flag value …"
           />
@@ -459,20 +456,20 @@ export function ModelsPage() {
 
       <section className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
         <div className="space-y-3">
-          {models.map((m, i) => {
-            const errs = allErrors[i]
+          {models.map((m) => {
+            const errs = errorsById.get(m.id) ?? {}
             const hasErr = Object.keys(errs).length > 0
             return (
-              <div key={i} className="rounded border border-neutral-800 bg-neutral-950/60">
+              <div key={m.id} className="rounded border border-neutral-800 bg-neutral-950/60">
                 <div className="flex items-center justify-between gap-2 px-3 py-2">
                   <button
                     type="button"
-                    onClick={() => toggle(i)}
+                    onClick={() => toggle(m.id)}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
-                    <span className="font-mono text-xs text-neutral-500">{open[i] ? '▾' : '▸'}</span>
+                    <span className="font-mono text-xs text-neutral-500">{open[m.id] ? '▾' : '▸'}</span>
                     <span className="truncate font-mono text-xs text-neutral-300">
-                      {m.name || `model #${i + 1}`}
+                      {m.name || `model #${models.indexOf(m) + 1}`}
                       {m.model && <span className="text-neutral-600"> · {m.model}</span>}
                     </span>
                     {hasErr && (
@@ -482,21 +479,21 @@ export function ModelsPage() {
                   {models.length > 1 && (
                     <button
                       type="button"
-                      onClick={() => setModels((ms) => ms.filter((_, j) => j !== i))}
+                      onClick={() => setModels((ms) => ms.filter((x) => x.id !== m.id))}
                       className="text-xs text-neutral-500 transition-colors hover:text-red-400"
                     >
                       remove
                     </button>
                   )}
                 </div>
-                {open[i] && (
+                {open[m.id] && (
                   <div className="px-3 pb-3">
                     <div className="mt-1 grid grid-cols-2 gap-2">
                       <Field label="name" error={errs.name}>
                         <input
                           className={inputCls}
                           value={m.name}
-                          onChange={(e) => set(i, { name: e.target.value })}
+                          onChange={(e) => set(m.id, { name: e.target.value })}
                           placeholder="my-model"
                         />
                       </Field>
@@ -505,7 +502,7 @@ export function ModelsPage() {
                           className={inputCls}
                           type="number"
                           value={m.ctxSize}
-                          onChange={(e) => set(i, { ctxSize: Number(e.target.value) })}
+                          onChange={(e) => set(m.id, { ctxSize: Number(e.target.value) })}
                         />
                       </Field>
                       <div className="col-span-2">
@@ -513,7 +510,7 @@ export function ModelsPage() {
                           <input
                             className={inputCls}
                             value={m.model}
-                            onChange={(e) => set(i, { model: e.target.value })}
+                            onChange={(e) => set(m.id, { model: e.target.value })}
                             placeholder="D:\models\....gguf"
                           />
                         </Field>
@@ -522,14 +519,14 @@ export function ModelsPage() {
                         <input
                           className={inputCls}
                           value={m.mmproj ?? ''}
-                          onChange={(e) => set(i, { mmproj: e.target.value || null })}
+                          onChange={(e) => set(m.id, { mmproj: e.target.value || null })}
                         />
                       </Field>
                       <Field label="draft model (optional)">
                         <input
                           className={inputCls}
                           value={m.draft ?? ''}
-                          onChange={(e) => set(i, { draft: e.target.value || null })}
+                          onChange={(e) => set(m.id, { draft: e.target.value || null })}
                         />
                       </Field>
                       <Field label="gpu-layers" error={errs.gpuLayers}>
@@ -537,7 +534,7 @@ export function ModelsPage() {
                           className={inputCls}
                           type="number"
                           value={m.gpuLayers}
-                          onChange={(e) => set(i, { gpuLayers: Number(e.target.value) })}
+                          onChange={(e) => set(m.id, { gpuLayers: Number(e.target.value) })}
                         />
                       </Field>
                       <Field label="threads (optional)" error={errs.threads}>
@@ -546,11 +543,11 @@ export function ModelsPage() {
                           type="number"
                           value={m.threads ?? ''}
                           onChange={(e) =>
-                            set(i, { threads: e.target.value === '' ? null : Number(e.target.value) })
+                            set(m.id, { threads: e.target.value === '' ? null : Number(e.target.value) })
                           }
                         />
                       </Field>
-                      {renderFlagSections(i, m)}
+                      {renderFlagSections(m)}
                     </div>
                   </div>
                 )}
@@ -562,7 +559,7 @@ export function ModelsPage() {
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => setModels((ms) => [...ms, emptyModel()])}
+            onClick={() => setModels((ms) => [...ms, withId(emptyModel())])}
             className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
           >
             + Add model

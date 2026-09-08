@@ -4,7 +4,6 @@ Runs the REAL platform primitives (named mutex/event on Windows, flock +
 AF_UNIX socket on Linux) with a unique name per test, so they never
 collide with a running llama-center app.
 """
-import os
 import threading
 import time
 import uuid
@@ -194,7 +193,6 @@ class TestWebViewProfile:
         """A stubborn rmtree (locked file) must not block startup."""
         d = S.webview_profile_dir()
         d.mkdir(parents=True)
-        import shutil
 
         def _boom(*a, **kw):
             raise OSError("locked")

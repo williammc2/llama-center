@@ -142,7 +142,8 @@ class TestApi:
             api = Api()
             assert "path" in api.save_config({"version": 1, "installDir": str(root)})
 
-            res = api.download_and_stage("llama-swap", f"http://127.0.0.1:{port}/llama-swap_999_windows_amd64.zip", sha)
+            url = f"http://127.0.0.1:{port}/llama-swap_999_windows_amd64.zip"
+            res = api.download_and_stage("llama-swap", url, sha)
             assert "staging" in res, res
             assert Path(res["staging"]).exists()
 
@@ -416,9 +417,8 @@ class TestAppUpdate:
 
 def _make_server(root: Path):
     """Minimal HTTP server serving files from `root`."""
-    from http.server import HTTPServer, SimpleHTTPRequestHandler
     import functools
-    import os
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
 
     handler = functools.partial(SimpleHTTPRequestHandler, directory=str(root))
     server = HTTPServer(("127.0.0.1", 0), handler)

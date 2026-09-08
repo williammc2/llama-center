@@ -14,10 +14,12 @@ auto-start. The P0–P5 surface the UI calls is unchanged from before.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import sys
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 # Make `llama_center` importable regardless of CWD (dev mode only — when
 # frozen, PyInstaller has already bundled the package into sys.path).
@@ -30,15 +32,17 @@ if not FROZEN:
 def dist_dir() -> Path:
     """Where the built UI lives: repo dist/ in dev, _MEIPASS/dist when frozen."""
     if FROZEN:
-        return Path(sys._MEIPASS) / "dist"
+        return Path(sys._MEIPASS) / "dist"  # type: ignore[attr-defined]
     return REPO_ROOT / "dist"
 
+
+if TYPE_CHECKING:
+    import pystray
 
 import webview  # noqa: E402
 
 from llama_center import singleton as single  # noqa: E402
 from llama_center import updater  # noqa: E402
-from llama_center.config import ConfigError, load_config  # noqa: E402
 from llama_center.api import (  # noqa: E402
     AppUpdateApi,
     ComponentApi,
@@ -46,27 +50,28 @@ from llama_center.api import (  # noqa: E402
     ProcessApi,
     SwapConfigApi,
 )
+from llama_center.config import ConfigError, load_config  # noqa: E402
 
 # Tray state (module-level: one icon per app run).
-_tray_icon: "pystray.Icon | None" = None
+_tray_icon: pystray.Icon | None = None
 _force_quit = False
 
 
 class Api(ConfigApi, ComponentApi, ProcessApi, SwapConfigApi, AppUpdateApi):
     """The surface exposed to the UI as window.pywebview.api.
 
-    Composed from the mixins in llama_center.api — the UI sees one flat
-    object; the Python side is organized by responsibility. The one piece of
-    live process state (``self._managed``) and the self-update close hook
-    (``self._force_close``) are initialized here.
+    Composed from the mixins in llama_center.api (all sharing _ApiBase) —
+    the UI sees one flat object; the Python side is organized by
+    responsibility. The only live-process state (``_managed``) has a
+    class-level default of None in _ApiBase; the self-update close hook
+    (``_force_close``) is wired here, since main.py owns the window.
     """
 
     def __init__(self) -> None:
-        self._managed = None
         self._force_close = _force_close_app
 
 
-def _shutdown_managed(api: "Api") -> None:
+def _shutdown_managed(api: Api) -> None:
     """atexit hook — no orphan llama-swap on a graceful app exit."""
     m = api._managed
     if m is not None and m.running:
@@ -90,13 +95,11 @@ def _force_close_app() -> None:
 
 def _tray_check_updates(window) -> None:
     window.show()
-    try:
+    with contextlib.suppress(Exception):
         window.evaluate_js("window.__lcCheckUpdates && window.__lcCheckUpdates()")
-    except Exception:
-        pass
 
 
-def start_tray(window, api: "Api") -> None:
+def start_tray(window, api: Api) -> None:
     """Run the tray icon in a daemon thread (pystray blocks).
 
     pystray is imported lazily: its __init__ resolves the OS backend at
@@ -126,7 +129,7 @@ def start_tray(window, api: "Api") -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
-def _maybe_autostart_swap(api: "Api") -> None:
+def _maybe_autostart_swap(api: Api) -> None:
     """autoStartLlamaSwap: start the server with the app (only when the port
     is free — an external llama-swap is adopted by the UI, not killed here)."""
     time.sleep(2)  # let the window + API come up
@@ -184,6 +187,7 @@ def main() -> int:
         js_api=api,
         hidden="--minimized" in sys.argv,  # login start → straight to the tray
     )
+    assert window is not None  # create_window only returns None on backend errors
 
     def on_closing(window) -> bool:
         """Close-to-tray: return False to cancel the close (hide instead).
@@ -213,10 +217,8 @@ def main() -> int:
     webview.start(storage_path=str(single.webview_profile_dir()))
 
     if _tray_icon is not None:
-        try:
+        with contextlib.suppress(Exception):
             _tray_icon.stop()
-        except Exception:
-            pass
     lock.release()
     return 0
 

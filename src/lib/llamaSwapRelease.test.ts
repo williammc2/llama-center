@@ -101,7 +101,7 @@ describe('parseRelease', () => {
       ],
     })
     expect(rel.assets).toHaveLength(1)
-    expect(rel.assets[0].name).toBe('llama-swap_253_windows_amd64.zip')
+    expect(rel.assets[0]?.name).toBe('llama-swap_253_windows_amd64.zip')
   })
 })
 

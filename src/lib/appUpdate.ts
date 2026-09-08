@@ -17,21 +17,25 @@ export interface AppRelease {
 const REPO = 'williammc2/llama-center'
 const LATEST_URL = `https://api.github.com/repos/${REPO}/releases/latest`
 
-/** Parse a GitHub `releases/latest` payload into an AppRelease. */
-export function parseAppRelease(raw: unknown): AppRelease {
+/** Parse a GitHub `releases/latest` payload into an AppRelease.
+ *
+ * `platform` is injectable (defaults to `navigator.platform`) so the parser
+ * stays pure and testable in Node — the last of the three release parsers
+ * that read the environment directly.
+ */
+export function parseAppRelease(raw: unknown, platform: string = typeof navigator !== 'undefined' ? (navigator.platform ?? '') : ''): AppRelease {
   if (typeof raw !== 'object' || raw === null) throw new Error('app release: not an object')
   const o = raw as Record<string, unknown>
 
   const tag = typeof o.tag_name === 'string' ? o.tag_name : ''
   const m = /^v(\d+\.\d+\.\d+)$/.exec(tag)
-  if (!m) throw new Error(`app release: bad tag ${tag}`)
+  if (!m || m[1] === undefined) throw new Error(`app release: bad tag ${tag}`)
   const version = m[1]
 
   const notes = typeof o.body === 'string' ? o.body : ''
   const publishedAt = typeof o.published_at === 'string' ? o.published_at : null
 
   // Find the platform-specific installer asset
-  const platform = typeof navigator !== 'undefined' ? (navigator.platform ?? '') : ''
   const isWindows = platform === '' || /win/i.test(platform)
   const ext = isWindows ? '.exe' : '.tar.gz'
   let installerUrl: string | null = null
@@ -84,7 +88,7 @@ export async function checkAppUpdate(
     })
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new Error('app update: timed out — check your connection')
+      throw new Error('app update: timed out — check your connection', { cause: e })
     }
     throw e
   } finally {

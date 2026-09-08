@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { bridge, type DownloadProgress } from './bridge'
 import { checkAppUpdate, type AppRelease } from './appUpdate'
+import { useDownloadProgress } from './useDownloadProgress'
 
 /**
  * App self-update state, shared by the sidebar (Shell) and Settings.
@@ -41,7 +42,8 @@ export function useAppUpdate(): AppUpdateState {
   const [installing, setInstalling] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
-  const [progress, setProgress] = useState<DownloadProgress | null>(null)
+  // Live download progress for the app installer (component 'app' only).
+  const progress = useDownloadProgress((p) => p.component === 'app')
 
   const check = useCallback(async () => {
     setChecking(true)
@@ -76,19 +78,6 @@ export function useAppUpdate(): AppUpdateState {
       setInstalling(false)
     }
   }, [release])
-
-  // Subscribe to download progress for the app installer.
-  useEffect(() => {
-    let off: (() => void) | undefined
-    void bridge.onDownloadProgress((p) => {
-      if (p.component === 'app') setProgress(p)
-    }).then((u) => {
-      off = u
-    })
-    return () => {
-      off?.()
-    }
-  }, [])
 
   return {
     version,

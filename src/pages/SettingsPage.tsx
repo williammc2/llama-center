@@ -3,6 +3,7 @@ import type { AppConfig } from '../lib/config'
 import type { AppUpdateState } from '../lib/useAppUpdate'
 import { CHECK_TIMEOUT_MS } from '../lib/appUpdate'
 import { Progress } from '../components/Progress'
+import { SettingToggle } from '../components/ui'
 
 interface SettingsPageProps {
   cfg: AppConfig
@@ -12,45 +13,38 @@ interface SettingsPageProps {
   update: AppUpdateState
 }
 
+// Settings uses a slightly larger field style (py-1.5 / text-sm) than the
+// models editor (py-1 / text-xs) — kept local on purpose.
 const inputCls =
   'w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 font-mono text-sm text-neutral-200 focus:border-sky-600 focus:outline-none'
 
-function Toggle({
-  label,
-  hint,
-  value,
-  onChange,
-}: {
-  label: string
-  hint: string
-  value: boolean
-  onChange: (v: boolean) => void
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
-      <input
-        type="checkbox"
-        checked={value}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4 accent-sky-600"
-      />
-      <span>
-        <span className="block text-sm text-neutral-200">{label}</span>
-        <span className="block text-xs text-neutral-500">{hint}</span>
-      </span>
-    </label>
-  )
+/** The editable settings fields (a subset of AppConfig). */
+interface SettingsDraft {
+  llamaSwapPort: number
+  installDir: string
+  checkUpdatesOnStart: boolean
+  autoStartLlamaSwap: boolean
+  closeToTray: boolean
+  startWithSystem: boolean
 }
 
+const draftFrom = (cfg: AppConfig): SettingsDraft => ({
+  llamaSwapPort: cfg.llamaSwapPort,
+  installDir: cfg.installDir,
+  checkUpdatesOnStart: cfg.checkUpdatesOnStart,
+  autoStartLlamaSwap: cfg.autoStartLlamaSwap,
+  closeToTray: cfg.closeToTray,
+  startWithSystem: cfg.startWithSystem,
+})
+
 export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: SettingsPageProps) {
-  const [port, setPort] = useState(cfg.llamaSwapPort)
-  const [installDir, setInstallDir] = useState(cfg.installDir)
-  const [checkUpdatesOnStart, setCheckUpdatesOnStart] = useState(cfg.checkUpdatesOnStart)
-  const [autoStartLlamaSwap, setAutoStartLlamaSwap] = useState(cfg.autoStartLlamaSwap)
-  const [closeToTray, setCloseToTray] = useState(cfg.closeToTray)
-  const [startWithSystem, setStartWithSystem] = useState(cfg.startWithSystem)
+  // One draft object instead of six useStates: `dirty` becomes a shallow
+  // comparison and adding a field is one line, not a new useState + a new
+  // `||` clause in the dirty check.
+  const [draft, setDraft] = useState<SettingsDraft>(() => draftFrom(cfg))
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const patch = (p: Partial<SettingsDraft>) => setDraft((d) => ({ ...d, ...p }))
 
   const {
     version,
@@ -77,27 +71,15 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
   const checkRemaining =
     checkStartedAt !== null ? Math.max(0, Math.ceil((checkStartedAt + CHECK_TIMEOUT_MS - Date.now()) / 1000)) : 0
 
-  const dirty =
-    port !== cfg.llamaSwapPort ||
-    installDir !== cfg.installDir ||
-    checkUpdatesOnStart !== cfg.checkUpdatesOnStart ||
-    autoStartLlamaSwap !== cfg.autoStartLlamaSwap ||
-    closeToTray !== cfg.closeToTray ||
-    startWithSystem !== cfg.startWithSystem
+  const dirty = (Object.keys(draft) as (keyof SettingsDraft)[]).some(
+    (k) => draft[k] !== cfg[k],
+  )
 
   const save = async () => {
     setSaving(true)
     setMsg(null)
     try {
-      await onSaveConfig({
-        ...cfg,
-        llamaSwapPort: port,
-        installDir,
-        checkUpdatesOnStart,
-        autoStartLlamaSwap,
-        closeToTray,
-        startWithSystem,
-      })
+      await onSaveConfig({ ...cfg, ...draft })
       setMsg({ kind: 'ok', text: 'saved' })
     } catch (e) {
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : 'save failed' })
@@ -118,16 +100,16 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
             <input
               className={inputCls}
               type="number"
-              value={port}
-              onChange={(e) => setPort(Number(e.target.value))}
+              value={draft.llamaSwapPort}
+              onChange={(e) => patch({ llamaSwapPort: Number(e.target.value) })}
             />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs text-neutral-500">install dir</span>
             <input
               className={inputCls}
-              value={installDir}
-              onChange={(e) => setInstallDir(e.target.value)}
+              value={draft.installDir}
+              onChange={(e) => patch({ installDir: e.target.value })}
             />
           </label>
         </div>
@@ -151,29 +133,29 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
         </div>
 
         <div className="space-y-2">
-          <Toggle
+          <SettingToggle
             label="Check for updates on start"
             hint="llama-swap and llama.cpp are checked when the app opens."
-            value={checkUpdatesOnStart}
-            onChange={setCheckUpdatesOnStart}
+            value={draft.checkUpdatesOnStart}
+            onChange={(v) => patch({ checkUpdatesOnStart: v })}
           />
-          <Toggle
+          <SettingToggle
             label="Start llama-swap when the app starts"
             hint="The server starts with the app (only when the port is free)."
-            value={autoStartLlamaSwap}
-            onChange={setAutoStartLlamaSwap}
+            value={draft.autoStartLlamaSwap}
+            onChange={(v) => patch({ autoStartLlamaSwap: v })}
           />
-          <Toggle
+          <SettingToggle
             label="Close to tray"
             hint="Closing the window minimizes to the tray instead of quitting."
-            value={closeToTray}
-            onChange={setCloseToTray}
+            value={draft.closeToTray}
+            onChange={(v) => patch({ closeToTray: v })}
           />
-          <Toggle
+          <SettingToggle
             label="Start with system"
             hint="The app starts at login, minimized to the tray."
-            value={startWithSystem}
-            onChange={setStartWithSystem}
+            value={draft.startWithSystem}
+            onChange={(v) => patch({ startWithSystem: v })}
           />
         </div>
 
@@ -181,7 +163,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
           <button
             type="button"
             onClick={() => void save()}
-            disabled={saving || !dirty || !(port > 0) || !installDir.trim()}
+            disabled={saving || !dirty || !(draft.llamaSwapPort > 0) || !draft.installDir.trim()}
             className="rounded-md bg-emerald-700 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}
