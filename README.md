@@ -5,7 +5,7 @@ and keeps up-to-date **llama.cpp** (nightlies) and **llama-swap** for local LLM
 inference. It owns the component paths end to end, so the user never edits raw
 config files or hunts for binaries.
 
-This file is the canonical project overview — read it first for context on what
+This file is the project overview — read it first for context on what
 the app is, how it works, and where things live.
 
 ## Screenshots
@@ -142,8 +142,9 @@ backend/.venv/Scripts/python.exe -m pip install -r backend/requirements.txt
 
 ```
 backend/           # Python: config, detection, updater, process, tray, autostart (pytest-tested)
-  llama_center/    #   package: config.py, detect.py, updater.py, process.py,
-                   #           swapconfig.py, autostart.py, icon.py
+  llama_center/    #   package: api.py (the pywebview API surface), config.py,
+                   #           detect.py, updater.py, process.py, swapconfig.py,
+                   #           singleton.py, paths.py, launch.py, autostart.py, icon.py
   main.py          #   pywebview entry point
 src/               # React UI
   components/      #   Wizard, Shell (sidebar)
