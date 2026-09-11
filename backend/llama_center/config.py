@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from llama_center.paths import data_root
@@ -46,6 +46,7 @@ class AppConfig:
     close_to_tray: bool = True
     check_updates_on_start: bool = True
     hf_token: str = ""  # HuggingFace token (optional); "" = anonymous
+    model_dirs: list = field(default_factory=list)  # extra model roots (Settings)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -147,6 +148,11 @@ def parse_config(raw: object) -> AppConfig:
     if not isinstance(hf_token, str):
         raise ConfigError(f"config: hf_token must be a string, got {hf_token!r}")
 
+    model_dirs = raw.get("model_dirs", [])
+    if not isinstance(model_dirs, list) or not all(isinstance(d, str) for d in model_dirs):
+        raise ConfigError(f"config: model_dirs must be a list of strings, got {model_dirs!r}")
+    model_dirs = [normalize_install_dir(d) for d in model_dirs if d.strip()]
+
     def _bool(key: str, dflt: bool) -> bool:
         v = raw.get(key)
         return dflt if v is None else bool(v)
@@ -168,6 +174,7 @@ def parse_config(raw: object) -> AppConfig:
         close_to_tray=_bool("close_to_tray", True),
         check_updates_on_start=_bool("check_updates_on_start", True),
         hf_token=hf_token,
+        model_dirs=model_dirs,
     )
 
 

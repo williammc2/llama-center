@@ -49,6 +49,15 @@ export interface SwapModelDef {
   extraFlags: string
 }
 
+/** One model file on disk (the "Model files" manager). */
+export interface ModelFile {
+  name: string
+  path: string
+  size: number
+  /** Folder path relative to the model root ("" = loose file at the root). */
+  repo: string
+}
+
 export interface Bridge {
   /** Current config on disk, or null (first run). */
   getConfig(): Promise<AppConfig | null>
@@ -74,6 +83,8 @@ export interface Bridge {
   startLlamaSwap(): Promise<{ pid?: number; error?: string; port?: number }>
   /** Stop a running llama-swap (managed first, then by image name). */
   stopLlamaSwap(): Promise<{ stopped: boolean; exitCode: number | null }>
+  /** Restart the MANAGED llama-swap (stop + start, no race). External = not-running. */
+  restartLlamaSwap(): Promise<{ pid?: number; error?: string }>
   /** Structured runtime status for the card (poll ~2s). */
   llamaSwapStatus(): Promise<SwapStatus>
   /** Last n lines of the managed process (newest last). */
@@ -95,6 +106,12 @@ export interface Bridge {
   listHfFiles(repoId: string): Promise<{ files?: Array<{ name: string; size: number; downloaded?: boolean; localPath?: string }>; error?: string }>
   /** Download one file from a HF repo into <installDir>/models/. Returns the local path. */
   downloadHfFile(repoId: string, filename: string): Promise<{ path?: string; error?: string }>
+  /** Every .gguf on disk (default root + Settings extra roots), grouped by repo folder. */
+  listModelFiles(): Promise<{ files: ModelFile[]; roots: string[] }>
+  /** Delete one model file — or its whole repo folder. Returns the file count removed. */
+  deleteModelFile(path: string, wholeRepo?: boolean): Promise<{ deleted?: number; error?: string }>
+  /** Save the current llama-swap config to a user-chosen path (native dialog). */
+  exportLlamaSwapConfig(): Promise<{ path?: string; cancelled?: boolean; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -116,6 +133,7 @@ interface PywebviewApi {
   probe_port(port: number): Promise<boolean>
   start_llama_swap(): Promise<{ pid?: number; error?: string; port?: number }>
   stop_llama_swap(): Promise<{ stopped?: boolean; exitCode?: number | null }>
+  restart_llama_swap(): Promise<{ pid?: number; error?: string }>
   llama_swap_status(): Promise<SwapStatus>
   llama_swap_logs(n?: number): Promise<string[]>
   save_llama_swap_config(models: SwapModelDef[]): Promise<{ path?: string; error?: string }>
@@ -126,6 +144,9 @@ interface PywebviewApi {
   download_and_launch_installer(url: string): Promise<{ launched?: boolean; closing?: boolean; error?: string }>
   list_hf_files(repo_id: string): Promise<{ files?: Array<{ name: string; size: number; downloaded?: boolean; localPath?: string }>; error?: string }>
   download_hf_file(repo_id: string, filename: string): Promise<{ path?: string; error?: string }>
+  list_model_files(): Promise<{ files: ModelFile[]; roots: string[] }>
+  delete_model_file(path: string, whole_repo?: boolean): Promise<{ deleted?: number; error?: string }>
+  export_llama_swap_config(): Promise<{ path?: string; cancelled?: boolean; error?: string }>
 }
 
 declare global {
@@ -212,6 +233,9 @@ const pywebview: Bridge = {
     const res = await window.pywebview!.api.stop_llama_swap()
     return { stopped: res.stopped === true, exitCode: res.exitCode ?? null }
   },
+  async restartLlamaSwap() {
+    return window.pywebview!.api.restart_llama_swap()
+  },
   async llamaSwapStatus() {
     return window.pywebview!.api.llama_swap_status()
   },
@@ -243,6 +267,15 @@ const pywebview: Bridge = {
   },
   async downloadHfFile(repoId, filename) {
     return window.pywebview!.api.download_hf_file(repoId, filename)
+  },
+  async listModelFiles() {
+    return window.pywebview!.api.list_model_files()
+  },
+  async deleteModelFile(path, wholeRepo = false) {
+    return window.pywebview!.api.delete_model_file(path, wholeRepo)
+  },
+  async exportLlamaSwapConfig() {
+    return window.pywebview!.api.export_llama_swap_config()
   },
   async onDownloadProgress(cb) {
     progressSubscribers.add(cb)
@@ -315,6 +348,9 @@ const browser: Bridge = {
   async stopLlamaSwap() {
     return { stopped: false, exitCode: null }
   },
+  async restartLlamaSwap() {
+    return { error: 'not-running' }
+  },
   async llamaSwapStatus() {
     return { managed: false, pid: null, portBusy: false, healthy: false, models: [] }
   },
@@ -344,6 +380,15 @@ const browser: Bridge = {
     return { error: SHELL_ONLY }
   },
   async downloadHfFile() {
+    return { error: SHELL_ONLY }
+  },
+  async listModelFiles() {
+    return { files: [], roots: [] }
+  },
+  async deleteModelFile() {
+    return { error: SHELL_ONLY }
+  },
+  async exportLlamaSwapConfig() {
     return { error: SHELL_ONLY }
   },
   async onDownloadProgress() {

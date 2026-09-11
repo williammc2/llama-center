@@ -127,6 +127,75 @@ class TestDownload:
         assert total == len(data)  # the test server sends Content-Length
         assert all(0 < r <= len(data) for r, _ in events)
 
+    def test_resume_continues_partial_download(self, tmp_path):
+        """A leftover .part is continued via Range (206) — no restart."""
+        data = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        seen = {}
+
+        class _RangeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                rng = self.headers.get("range", "")
+                if rng.startswith("bytes="):
+                    start = int(rng.split("=")[1].split("-")[0])
+                    seen["range"] = rng
+                    body = data[start:]
+                    self.send_response(206)
+                    self.send_header("content-length", str(len(body)))
+                else:
+                    seen["range"] = None
+                    body = data
+                    self.send_response(200)
+                    self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), _RangeHandler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            dest = tmp_path / "big.gguf"
+            part = dest.with_name(dest.name + ".part")
+            part.write_bytes(data[:10])  # a dropped download left 10 bytes
+            updater.download(f"http://127.0.0.1:{port}/big.gguf", dest, sha256_bytes(data))
+            assert seen["range"] == "bytes=10-"
+            assert dest.read_bytes() == data
+            assert not part.exists()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_resume_falls_back_to_restart_when_range_ignored(self, tmp_path):
+        """Server answers 200 to a Range request → restart from zero."""
+        data = b"0123456789"
+        seen = {}
+
+        class _NoRangeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen["range"] = self.headers.get("range")
+                self.send_response(200)
+                self.send_header("content-length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), _NoRangeHandler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            dest = tmp_path / "file.bin"
+            dest.with_name(dest.name + ".part").write_bytes(b"junk")
+            updater.download(f"http://127.0.0.1:{port}/file.bin", dest)
+            assert seen["range"] == "bytes=4-"
+            assert dest.read_bytes() == data  # junk was overwritten, not appended
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
 
 class TestExtract:
     def test_flat_zip_returns_dest(self, server, tmp_path):

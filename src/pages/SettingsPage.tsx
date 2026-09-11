@@ -27,6 +27,7 @@ interface SettingsDraft {
   closeToTray: boolean
   startWithSystem: boolean
   hfToken: string
+  modelDirs: string[]
 }
 
 const draftFrom = (cfg: AppConfig): SettingsDraft => ({
@@ -37,6 +38,7 @@ const draftFrom = (cfg: AppConfig): SettingsDraft => ({
   closeToTray: cfg.closeToTray,
   startWithSystem: cfg.startWithSystem,
   hfToken: cfg.hfToken,
+  modelDirs: cfg.modelDirs,
 })
 
 export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: SettingsPageProps) {
@@ -46,7 +48,15 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
   const [draft, setDraft] = useState<SettingsDraft>(() => draftFrom(cfg))
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [newModelDir, setNewModelDir] = useState('')
   const patch = (p: Partial<SettingsDraft>) => setDraft((d) => ({ ...d, ...p }))
+
+  const addModelDir = () => {
+    const d = newModelDir.trim()
+    if (!d || draft.modelDirs.includes(d)) return
+    patch({ modelDirs: [...draft.modelDirs, d] })
+    setNewModelDir('')
+  }
 
   const {
     version,
@@ -129,6 +139,46 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
             autoComplete="off"
           />
         </label>
+
+        <div>
+          <span className="mb-1 block text-xs text-neutral-500">
+            Model folders <span className="text-neutral-600">(extra roots scanned for models, alongside the app's models folder)</span>
+          </span>
+          {draft.modelDirs.length > 0 && (
+            <ul className="mb-2 space-y-1">
+              {draft.modelDirs.map((d) => (
+                <li key={d} className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 font-mono text-xs text-neutral-300">
+                  <span className="min-w-0 flex-1 truncate" title={d}>{d}</span>
+                  <button
+                    type="button"
+                    onClick={() => patch({ modelDirs: draft.modelDirs.filter((x) => x !== d) })}
+                    className="shrink-0 text-neutral-500 transition-colors hover:text-red-400"
+                    title="remove"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2">
+            <input
+              className={inputCls + ' flex-1'}
+              value={newModelDir}
+              onChange={(e) => setNewModelDir(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addModelDir()}
+              placeholder="path to a folder with models (e.g. D:\models or ~/models)"
+            />
+            <button
+              type="button"
+              onClick={addModelDir}
+              disabled={!newModelDir.trim()}
+              className="shrink-0 rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+            >
+              Add
+            </button>
+          </div>
+        </div>
 
         <div className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
           <span>

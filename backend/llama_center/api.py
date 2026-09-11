@@ -146,6 +146,7 @@ class ConfigApi(_ApiBase):
         "closeToTray": "close_to_tray",
         "checkUpdatesOnStart": "check_updates_on_start",
         "hfToken": "hf_token",
+        "modelDirs": "model_dirs",
     }
 
     def _from_camel(self, raw: dict) -> dict:
@@ -284,6 +285,18 @@ class ProcessApi(_ApiBase):
             self._managed.flush()
             return {"stopped": True, "exitCode": code}
         return {"stopped": updater.stop_llama_swap(), "exitCode": None}
+
+    def restart_llama_swap(self) -> dict:
+        """Stop + start the managed llama-swap (one action, no race).
+
+        Only the managed process is restarted — an adopted (external) one is
+        left alone. {pid} | {error: "not-running" | start_llama_swap's errors}.
+        """
+        if self._managed is None or not self._managed.running:
+            return {"error": "not-running"}
+        self._managed.stop()
+        self._managed.flush()
+        return self.start_llama_swap()
 
     def llama_swap_status(self) -> dict:
         """Structured status for the UI (polled ~2s): managed state, port,
@@ -445,6 +458,24 @@ class ModelApi(_ApiBase):
     HF = "https://huggingface.co"
 
     @staticmethod
+    def _model_roots() -> list[Path]:
+        """Where model files live: <install_dir>/models + the extra roots
+        from Settings (model_dirs). Duplicates collapsed, missing dirs kept
+        (a root may be created by the next download)."""
+        roots: list[Path] = []
+        try:
+            cfg = load_config()
+        except ConfigError:
+            return roots
+        if cfg.install_dir:
+            roots.append(Path(cfg.install_dir) / "models")
+        for d in cfg.model_dirs:
+            p = Path(d)
+            if p not in roots:
+                roots.append(p)
+        return roots
+
+    @staticmethod
     def _hf_headers() -> dict[str, str]:
         try:
             token = load_config().hf_token
@@ -480,30 +511,35 @@ class ModelApi(_ApiBase):
             entries = r.json()
         except ValueError:
             return {"error": "HF returned non-JSON"}
-        # Where downloads for THIS repo land — used to detect local copies.
-        # (download_hf_file flattens subpaths to the file name.)
+        # Where downloads for THIS repo land (default root) — also the first
+        # place to look for existing copies (extra roots are checked too).
         dest_dir: Path | None = None
+        roots: list[Path] = []
         try:
             cfg = load_config()
             if cfg.install_dir:
                 dest_dir = Path(cfg.install_dir) / "models" / repo_id
+                # default root first, then any extra roots from Settings
+                roots = [dest_dir] + [Path(d) / repo_id for d in cfg.model_dirs]
         except ConfigError:
             pass
         files = []
-        for e in entries:
+        for item in entries:
             if not (
-                isinstance(e, dict)
-                and e.get("type") == "file"
-                and e.get("path", "").lower().endswith(".gguf")
+                isinstance(item, dict)
+                and item.get("type") == "file"
+                and item.get("path", "").lower().endswith(".gguf")
             ):
                 continue
-            name = e["path"]
-            entry = {"name": name, "size": int(e.get("size") or 0)}
-            if dest_dir is not None:
-                p = dest_dir / name.rsplit("/", 1)[-1]
+            name = item["path"]
+            entry = {"name": name, "size": int(item.get("size") or 0)}
+            flat = name.rsplit("/", 1)[-1]
+            for root_dir in roots:
+                p = root_dir / flat
                 if p.exists():
                     entry["downloaded"] = True
                     entry["localPath"] = str(p)
+                    break
             files.append(entry)
         files.sort(key=lambda f: f["name"])
         return {"files": files}
@@ -533,12 +569,89 @@ class ModelApi(_ApiBase):
             )
 
         try:
-            # ponytail: no resume — a dropped 20 GB GGUF restarts. Add a
-            # Range header when Will's connection actually drops mid-download.
             updater.download(url, dest, None, timeout=600.0, progress=_on_progress)
             return {"path": str(dest)}
         except (updater.UpdateError, OSError) as e:
             return {"error": str(e)}
+
+    def list_model_files(self) -> dict:
+        """Every model file on disk: the default models root + any extra roots
+        from Settings (model_dirs). {files: [{name, path, size, repo}], roots}.
+
+        `repo` is the folder path relative to the root ("" for loose files) —
+        the UI groups by it and offers file- and repo-level delete.
+        """
+        roots = self._model_roots()
+        files = []
+        for root in roots:
+            if not root.is_dir():
+                continue
+            for p in sorted(root.rglob("*.gguf")):
+                if p.is_file():
+                    rel = p.relative_to(root)
+                    files.append(
+                        {
+                            "name": p.name,
+                            "path": str(p),
+                            "size": p.stat().st_size,
+                            # repo-like id (not a filesystem path) — always /
+                            "repo": "/".join(rel.parts[:-1]),
+                        }
+                    )
+        return {"files": files, "roots": [str(r) for r in roots]}
+
+    def delete_model_file(self, path: str, whole_repo: bool = False) -> dict:
+        """Delete one model file — or its whole repo folder when `whole_repo`.
+
+        {deleted: n} (files removed) | {error}. The path comes from
+        list_model_files (or the user's own disk), so no extra trust check.
+        """
+        p = Path(path)
+        try:
+            if whole_repo:
+                repo = p.parent if p.is_file() else p
+                if not repo.is_dir():
+                    return {"error": f"folder not found: {repo}"}
+                n = sum(1 for f in repo.rglob("*.gguf") if f.is_file())
+                shutil.rmtree(repo)
+            else:
+                if not p.is_file():
+                    return {"error": f"file not found: {p}"}
+                p.unlink()
+                n = 1
+            return {"deleted": n}
+        except OSError as e:
+            return {"error": str(e)}
+
+    def export_llama_swap_config(self, path: str | None = None) -> dict:
+        """Write the current llama-swap config to a user-chosen path.
+
+        No `path` → a native save dialog (returns {cancelled}). {path} |
+        {error}.
+        """
+        if not path:
+            w = webview.windows[0] if webview.windows else None
+            if w is None:
+                return {"error": "no window for the save dialog"}
+            res = w.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename="llama-swap-export.yaml",
+                file_types=("YAML files (*.yaml)",),
+            )
+            if not res:
+                return {"cancelled": True}
+            path = res[0]
+        try:
+            d = self._dirs("llama-swap")
+        except ConfigError as e:
+            return {"error": str(e)}
+        p = d.live / swc.CONFIG_NAME
+        if not p.exists():
+            return {"error": "no config saved yet"}
+        dest = Path(path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
+        return {"path": str(dest)}
 
 
 class AppUpdateApi(_ApiBase):

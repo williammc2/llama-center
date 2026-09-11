@@ -217,6 +217,40 @@ class TestRunSurface:
         assert res["stopped"] is False
         assert res["exitCode"] is None
 
+    def test_restart_not_running(self, home):
+        res = Api().restart_llama_swap()
+        assert res.get("error") == "not-running"
+
+    def test_restart_stops_then_starts(self, home, monkeypatch):
+        """One action: stop the managed process, then start again."""
+
+        class _FakeManaged:
+            running = True
+            pid = 1234
+            stopped = False
+            flushed = False
+
+            def stop(self, timeout=10.0):
+                self.stopped = True
+                return 0
+
+            def flush(self, timeout=2.0):
+                self.flushed = True
+
+        fake = _FakeManaged()
+        api = Api()
+        api._managed = fake
+        started = {}
+
+        def fake_start(self):
+            started["called"] = True
+            return {"pid": 9999}
+
+        monkeypatch.setattr("llama_center.api.ProcessApi.start_llama_swap", fake_start)
+        res = api.restart_llama_swap()
+        assert res == {"pid": 9999}
+        assert fake.stopped and fake.flushed and started["called"]
+
 
 class TestSwapConfig:
     """P4 — save/get/import of the llama-swap models config."""
@@ -473,6 +507,106 @@ class TestModelApi:
         assert p == root / "models" / "org" / "model" / "model.gguf"
         assert captured["url"].endswith("/org/model/resolve/main/model.gguf")
         assert p.read_bytes() == b"GGUF-BYTES"
+
+    def test_list_hf_files_marks_downloaded_in_extra_root(self, home, monkeypatch):
+        """A copy in an extra model root (Settings) is flagged too."""
+        from llama_center import api as apimod
+
+        root = home / "root"
+        extra = home / "extra"
+        Api().save_config({"version": 1, "installDir": str(root), "modelDirs": [str(extra)]})
+        (extra / "org" / "model").mkdir(parents=True)
+        (extra / "org" / "model" / "model-Q4_K_M.gguf").write_bytes(b"x")
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return [{"type": "file", "path": "model-Q4_K_M.gguf", "size": 100}]
+
+        monkeypatch.setattr(apimod.requests, "get", lambda *a, **k: _Resp())
+        res = Api().list_hf_files("org/model")
+        f = res["files"][0]
+        assert f["downloaded"] is True
+        assert f["localPath"].replace("\\", "/").endswith("extra/org/model/model-Q4_K_M.gguf")
+
+    def test_list_model_files_groups_by_repo(self, home):
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        d = root / "models" / "org" / "model"
+        d.mkdir(parents=True)
+        (d / "a.gguf").write_bytes(b"1")
+        (d / "b.gguf").write_bytes(b"12")
+        (root / "models" / "loose.gguf").write_bytes(b"123")
+        res = Api().list_model_files()
+        assert res["roots"] == [str(root / "models")]
+        by_name = {f["name"]: f for f in res["files"]}
+        assert set(by_name) == {"a.gguf", "b.gguf", "loose.gguf"}
+        assert by_name["a.gguf"]["repo"] == "org/model"
+        assert by_name["loose.gguf"]["repo"] == ""
+        assert by_name["a.gguf"]["size"] == 1
+
+    def test_list_model_files_includes_extra_roots(self, home):
+        root = home / "root"
+        extra = home / "extra"
+        Api().save_config({"version": 1, "installDir": str(root), "modelDirs": [str(extra)]})
+        (extra / "org" / "model").mkdir(parents=True)
+        (extra / "org" / "model" / "big.gguf").write_bytes(b"x")
+        res = Api().list_model_files()
+        assert res["roots"] == [str(root / "models"), str(extra)]
+        f = res["files"][0]
+        assert f["name"] == "big.gguf"
+        assert f["repo"] == "org/model"
+
+    def test_delete_model_file(self, home):
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        d = root / "models" / "org" / "model"
+        d.mkdir(parents=True)
+        (d / "a.gguf").write_bytes(b"1")
+        (d / "b.gguf").write_bytes(b"1")
+        res = Api().delete_model_file(str(d / "a.gguf"))
+        assert res == {"deleted": 1}
+        assert not (d / "a.gguf").exists()
+        assert (d / "b.gguf").exists()
+        assert "not found" in Api().delete_model_file(str(d / "a.gguf"))["error"]
+
+    def test_delete_model_file_whole_repo(self, home):
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        d = root / "models" / "org" / "model"
+        d.mkdir(parents=True)
+        (d / "a.gguf").write_bytes(b"1")
+        (d / "b.gguf").write_bytes(b"1")
+        res = Api().delete_model_file(str(d / "a.gguf"), whole_repo=True)
+        assert res == {"deleted": 2}
+        assert not d.exists()
+
+    def test_export_llama_swap_config(self, home):
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        import os
+
+        (root / "llama-cpp").mkdir(parents=True)
+        server = "llama-server.exe" if os.name == "nt" else "llama-server"
+        (root / "llama-cpp" / server).write_bytes(b"x")
+        Api().save_llama_swap_config(
+            [
+                {
+                    "name": "m1",
+                    "model": "C:\\m.gguf",
+                    "ctxSize": 4096,
+                    "gpuLayers": 999,
+                    "extraFlags": "",
+                }
+            ]
+        )
+        out = home / "out" / "export.yaml"
+        res = Api().export_llama_swap_config(str(out))
+        assert "path" in res, res
+        assert out.read_text(encoding="utf-8") == (
+            root / "llama-swap" / "llama-swap.yaml"
+        ).read_text(encoding="utf-8")
 
 
 class TestAppUpdate:

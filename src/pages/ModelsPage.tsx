@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { bridge, type SwapModelDef } from '../lib/bridge'
+import { bridge, type ModelFile, type SwapModelDef } from '../lib/bridge'
 import {
   parseFlagGroups,
   serializeFlagGroups,
@@ -133,6 +133,165 @@ function fmtSize(n: number): string {
   if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`
   if (n >= 1 << 20) return `${Math.round(n / (1 << 20))} MB`
   return `${Math.round(n / 1024)} KB`
+}
+
+/** Clipboard with an execCommand fallback (file:// in WebView2). */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  }
+}
+
+/**
+ * "Model files" — every .gguf on disk (default root + the extra roots from
+ * Settings), grouped by repo folder. Delete a single file or the whole repo.
+ *
+ * State is local: the list is loaded on mount and refreshed on demand (a
+ * delete or a new download changes the disk, not the app state).
+ */
+function ModelFilesSection() {
+  const [files, setFiles] = useState<ModelFile[] | null>(null)
+  const [roots, setRoots] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  // Path currently in the "✓ copied" flash (clears itself after 1.5s).
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const copy = async (f: ModelFile) => {
+    if (await copyText(f.path)) {
+      setCopied(f.path)
+      window.setTimeout(() => setCopied((c) => (c === f.path ? null : c)), 1500)
+    }
+  }
+
+  const load = async () => {
+    const res = await bridge.listModelFiles()
+    setFiles(res.files)
+    setRoots(res.roots)
+  }
+  useEffect(() => {
+    void bridge.listModelFiles().then((res) => {
+      setFiles(res.files)
+      setRoots(res.roots)
+    })
+  }, [])
+
+  const delFile = async (f: ModelFile) => {
+    if (!window.confirm(`Delete ${f.name} (${fmtSize(f.size)})?\n\nThe file is removed from disk — the model entry (if any) still points at it.`)) return
+    setBusy(true)
+    const res = await bridge.deleteModelFile(f.path)
+    if (res.error) setFiles(null)
+    else void load()
+    setBusy(false)
+  }
+
+  const delRepo = async (repo: string, files: ModelFile[]) => {
+    const first = files[0]
+    if (!first) return
+    const label = repo || '(loose files)'
+    if (!window.confirm(`Delete the whole folder ${label}?\n\nRemoves ${files.length} file(s), ${fmtSize(files.reduce((a, f) => a + f.size, 0))}, from disk.`)) return
+    setBusy(true)
+    const res = await bridge.deleteModelFile(first.path, true)
+    if (res.error) setFiles(null)
+    else void load()
+    setBusy(false)
+  }
+
+  const groups = new Map<string, ModelFile[]>()
+  for (const f of files ?? []) {
+    const list = groups.get(f.repo) ?? []
+    list.push(f)
+    groups.set(f.repo, list)
+  }
+  const total = (files ?? []).reduce((a, f) => a + f.size, 0)
+
+  return (
+    <FlagSection
+      title="Model files on disk"
+      summary={files ? `${files.length} file(s) · ${fmtSize(total)}` : '…'}
+      open={open}
+      onToggle={() => setOpen((v) => !v)}
+    >
+      <div className="mt-1">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="font-mono text-[10px] text-neutral-600">{roots.join(' · ') || 'no roots configured'}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={busy}
+            className="rounded border border-neutral-700 px-2 py-0.5 text-[10px] text-neutral-400 transition-colors hover:border-neutral-500 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
+        {files && files.length === 0 && <p className="text-xs text-neutral-500">no .gguf files found in the model roots.</p>}
+        <div className="space-y-2">
+          {[...groups.entries()].map(([repo, group]) => (
+            <div key={repo || '(loose)'} className="rounded border border-neutral-800/60">
+              <div className="flex items-center gap-2 border-b border-neutral-800/60 px-2 py-1">
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-neutral-400" title={repo}>
+                  {repo || '(loose files)'}
+                </span>
+                <span className="shrink-0 font-mono text-[10px] text-neutral-600">
+                  {group.length} file(s) · {fmtSize(group.reduce((a, f) => a + f.size, 0))}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void delRepo(repo, group)}
+                  disabled={busy}
+                  className="shrink-0 text-[10px] text-neutral-500 transition-colors hover:text-red-400 disabled:opacity-50"
+                  title="delete the whole folder"
+                >
+                  delete folder
+                </button>
+              </div>
+              <ul className="px-2 py-1">
+                {group.map((f) => (
+                  <li key={f.path} className="flex items-center gap-2 py-0.5 font-mono text-xs">
+                    <button
+                      type="button"
+                      onClick={() => void copy(f)}
+                      title={`copy path: ${f.path}`}
+                      className={
+                        'min-w-0 flex-1 truncate text-left transition-colors ' +
+                        (copied === f.path ? 'text-emerald-400' : 'text-neutral-300 hover:text-sky-300')
+                      }
+                    >
+                      {f.name}
+                    </button>
+                    {copied === f.path && (
+                      <span className="shrink-0 text-[10px] text-emerald-500">✓ copied</span>
+                    )}
+                    <span className="shrink-0 text-neutral-500">{fmtSize(f.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => void delFile(f)}
+                      disabled={busy}
+                      className="shrink-0 text-neutral-500 transition-colors hover:text-red-400 disabled:opacity-50"
+                      title="delete this file"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </FlagSection>
+  )
 }
 
 /**
@@ -746,6 +905,22 @@ export function ModelsPage() {
           >
             Import
           </button>
+          <button
+            type="button"
+            onClick={async () => {
+              setMsg(null)
+              const res = await bridge.exportLlamaSwapConfig()
+              if (res.error) setMsg({ kind: 'err', text: res.error })
+              else if (res.path) setMsg({ kind: 'ok', text: `exported → ${res.path}` })
+            }}
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
+          >
+            Export config
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <ModelFilesSection />
         </div>
 
         {msg && (

@@ -64,6 +64,8 @@ export function Wizard({ detection, initial, onSaved, onBack }: WizardProps) {
       // Reconfigure must not wipe a recorded install (the files still exist).
       llamaSwapInstalled: initial?.llamaSwapInstalled ?? null,
       llamaCppInstalled: initial?.llamaCppInstalled ?? null,
+      // …nor the user's extra model roots.
+      modelDirs: initial?.modelDirs ?? [],
     }
     setSaving(true)
     setError(null)

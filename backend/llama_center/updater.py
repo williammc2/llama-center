@@ -105,8 +105,9 @@ def download(
 ) -> Path:
     """Stream `url` to `dest` (via a .part file), verify SHA-256, rename into place.
 
-    Raises UpdateError on HTTP failure or checksum mismatch (the .part file is
-    removed either way, so a retry never sees a half-written archive).
+    A leftover `.part` is resumed (Range request, append mode) — a dropped
+    download continues instead of restarting. On network failure the .part
+    is kept for the next attempt; on checksum mismatch it is removed.
 
     `progress(received_bytes, total_bytes_or_None)` is called at most ~4x/s
     (and once on completion) — total is null when the server sends no
@@ -114,15 +115,23 @@ def download(
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
+    # Resume: a leftover .part from a dropped download is continued via a
+    # Range request (HF and GitHub releases both support it). A 200 (server
+    # ignored Range) restarts from zero; a 206 appends to the partial file.
+    # The final SHA-256 check still guards integrity either way.
+    resume_from = part.stat().st_size if part.exists() else 0
+    headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
     try:
-        with requests.get(url, stream=True, timeout=timeout) as r:
-            if r.status_code != 200:
+        with requests.get(url, stream=True, timeout=timeout, headers=headers) as r:
+            if r.status_code not in (200, 206):
                 raise UpdateError(f"download: HTTP {r.status_code} for {url}")
+            if resume_from and r.status_code == 200:
+                resume_from = 0
             clen = r.headers.get("content-length")
-            total = int(clen) if clen and clen.isdigit() else None
-            received = 0
+            total = int(clen) + resume_from if clen and clen.isdigit() else None
+            received = resume_from
             last_report = 0.0
-            with open(part, "wb") as f:
+            with open(part, "ab" if resume_from else "wb") as f:
                 for chunk in r.iter_content(chunk_size=CHUNK):
                     f.write(chunk)
                     received += len(chunk)

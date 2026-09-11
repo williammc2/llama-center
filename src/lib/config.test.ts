@@ -65,6 +65,18 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ version: 1, installDir: '/x', hfToken: 42 })).toThrow(/hfToken/)
   })
 
+  it('modelDirs: missing → [], present → kept (blank entries dropped)', () => {
+    expect(parseConfig({ version: 1, installDir: '/x' }).modelDirs).toEqual([])
+    expect(
+      parseConfig({ version: 1, installDir: '/x', modelDirs: ['D:\\models', '  ', 'E:\\gguf'] }).modelDirs,
+    ).toEqual(['D:\\models', 'E:\\gguf'])
+  })
+
+  it('rejects non-list modelDirs', () => {
+    expect(() => parseConfig({ version: 1, installDir: '/x', modelDirs: 'D:\\models' })).toThrow(/modelDirs/)
+    expect(() => parseConfig({ version: 1, installDir: '/x', modelDirs: [42] })).toThrow(/modelDirs/)
+  })
+
   it('round-trips through serializeConfig', () => {
     const cfg = parseConfig({ version: 1, installDir: '/x', backend: 'cuda', cudaMajor: 12 })
     const json = serializeConfig(cfg)

@@ -43,6 +43,8 @@ export interface AppConfig {
   checkUpdatesOnStart: boolean
   /** HuggingFace token (optional); '' = anonymous (public files work). */
   hfToken: string
+  /** Extra model roots (Settings) — scanned alongside <installDir>/models. */
+  modelDirs: string[]
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -61,6 +63,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   closeToTray: true,
   checkUpdatesOnStart: true,
   hfToken: '',
+  modelDirs: [],
 }
 
 /**
@@ -110,6 +113,14 @@ export function parseConfig(raw: unknown): AppConfig {
     if (typeof v !== 'string') throw new Error('config: hfToken must be a string')
     return v
   }
+  // Extra model roots: missing → [], present-but-not-a-string-list throws.
+  const modelDirs = (v: unknown): string[] => {
+    if (v === undefined) return []
+    if (!Array.isArray(v) || !v.every((d) => typeof d === 'string')) {
+      throw new Error('config: modelDirs must be a list of strings')
+    }
+    return v.filter((d) => d.trim() !== '')
+  }
 
   return {
     version: 1,
@@ -128,6 +139,7 @@ export function parseConfig(raw: unknown): AppConfig {
     closeToTray: bool(o.closeToTray, true),
     checkUpdatesOnStart: bool(o.checkUpdatesOnStart, true),
     hfToken: hfToken(o.hfToken),
+    modelDirs: modelDirs(o.modelDirs),
   }
 }
 

@@ -167,6 +167,17 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
     }
   }
 
+  const doRestart = async () => {
+    setBusy(true)
+    try {
+      const r = await bridge.restartLlamaSwap()
+      if (r.error) setPhase({ status: 'error', message: r.error })
+      else setPhase({ status: 'done', message: `restarted (pid ${r.pid})` })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // --- render ---------------------------------------------------------------
 
   const upToDate = latest !== null && installed !== null && latest.version <= installed
@@ -224,14 +235,26 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
 
         <div className="mt-4 flex flex-wrap gap-2">
           {status?.portBusy ? (
-            <button
-              type="button"
-              onClick={() => void doStop()}
-              disabled={busyAny}
-              className="rounded-md border border-amber-700 px-4 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:border-amber-500 disabled:opacity-50"
-            >
-              Stop
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => void doStop()}
+                disabled={busyAny}
+                className="rounded-md border border-amber-700 px-4 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:border-amber-500 disabled:opacity-50"
+              >
+                Stop
+              </button>
+              {status.managed && (
+                <button
+                  type="button"
+                  onClick={() => void doRestart()}
+                  disabled={busyAny}
+                  className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+                >
+                  Restart
+                </button>
+              )}
+            </>
           ) : (
             <button
               type="button"
