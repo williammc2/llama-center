@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Pre-commit gate — push IS a live release, so nothing broken reaches main.
+# Escape hatch: git commit --no-verify
+#
+# Checks (fast enough to not annoy, strict enough to catch the real ones):
+#   TS:     tsc --noEmit, vitest run, eslint
+#   Python: pytest, ruff
+# Not gated: mypy (3 known stub errors — noise, see skill), pnpm build (tsc covers it).
+set -u
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root" || exit 1
+
+fail=0
+run() {
+  local label="$1"; shift
+  echo "── $label"
+  if ! "$@"; then
+    fail=1
+    echo "   ✗ $label failed"
+  fi
+}
+
+run "typecheck (tsc --noEmit)"        pnpm run --silent typecheck
+run "unit tests (vitest)"             pnpm run --silent test
+run "lint (eslint)"                   pnpm run --silent lint
+run "python tests (pytest)"           bash -c "cd backend && python -m pytest -q"
+run "python lint (ruff)"              bash -c "cd backend && uvx ruff@0.14 check llama_center/ main.py test_*.py"
+
+if [ "$fail" -ne 0 ]; then
+  echo
+  echo "pre-commit: checks failed — fix and re-commit (or --no-verify to bypass)"
+  exit 1
+fi
+echo "pre-commit: all checks passed"
