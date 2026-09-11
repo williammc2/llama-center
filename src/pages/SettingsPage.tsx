@@ -26,6 +26,7 @@ interface SettingsDraft {
   autoStartLlamaSwap: boolean
   closeToTray: boolean
   startWithSystem: boolean
+  hfToken: string
 }
 
 const draftFrom = (cfg: AppConfig): SettingsDraft => ({
@@ -35,6 +36,7 @@ const draftFrom = (cfg: AppConfig): SettingsDraft => ({
   autoStartLlamaSwap: cfg.autoStartLlamaSwap,
   closeToTray: cfg.closeToTray,
   startWithSystem: cfg.startWithSystem,
+  hfToken: cfg.hfToken,
 })
 
 export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: SettingsPageProps) {
@@ -113,6 +115,20 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
             />
           </label>
         </div>
+
+        <label className="block">
+          <span className="mb-1 block text-xs text-neutral-500">
+            HuggingFace token <span className="text-neutral-600">(optional — for gated repos + higher rate limit)</span>
+          </span>
+          <input
+            className={inputCls}
+            type="password"
+            value={draft.hfToken}
+            onChange={(e) => patch({ hfToken: e.target.value })}
+            placeholder="hf_… (leave empty for public files)"
+            autoComplete="off"
+          />
+        </label>
 
         <div className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
           <span>

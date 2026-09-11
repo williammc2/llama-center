@@ -145,6 +145,7 @@ class ConfigApi(_ApiBase):
         "autoStartLlamaSwap": "auto_start_llama_swap",
         "closeToTray": "close_to_tray",
         "checkUpdatesOnStart": "check_updates_on_start",
+        "hfToken": "hf_token",
     }
 
     def _from_camel(self, raw: dict) -> dict:
@@ -429,6 +430,115 @@ class SwapConfigApi(_ApiBase):
     def open_path(self, path: str) -> dict:
         """Open a folder in the OS file explorer."""
         return launch.open_target(path)
+
+
+class ModelApi(_ApiBase):
+    """Model file downloads from HuggingFace (discovery + bytes).
+
+    The HF API is two flat GETs — no SDK needed:
+      list:  https://huggingface.co/api/models/{repo_id}/tree/main
+      bytes: https://huggingface.co/{repo_id}/resolve/main/{filename}
+    An optional Bearer token (config `hf_token`) unlocks gated repos and a
+    higher rate limit; public files work anonymously.
+    """
+
+    HF = "https://huggingface.co"
+
+    @staticmethod
+    def _hf_headers() -> dict[str, str]:
+        try:
+            token = load_config().hf_token
+        except ConfigError:
+            token = ""
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
+    def list_hf_files(self, repo_id: str) -> dict:
+        """List .gguf files in a HF repo (main branch).
+
+        Returns {files: [{name, size, downloaded?, localPath?}]} or {error}.
+        `downloaded` marks files already present in the local models dir
+        (the UI offers "select" instead of re-downloading).
+        """
+        repo_id = repo_id.strip().strip("/")
+        if not repo_id:
+            return {"error": "enter a repo id, e.g. org/model"}
+        try:
+            r = requests.get(
+                f"{self.HF}/api/models/{repo_id}/tree/main",
+                headers=self._hf_headers(),
+                timeout=15,
+            )
+        except requests.RequestException as e:
+            return {"error": f"HF unreachable: {e}"}
+        if r.status_code == 401:
+            return {"error": "gated repo — set your HF token in Settings"}
+        if r.status_code == 404:
+            return {"error": f"repo not found: {repo_id}"}
+        if r.status_code != 200:
+            return {"error": f"HF returned HTTP {r.status_code}"}
+        try:
+            entries = r.json()
+        except ValueError:
+            return {"error": "HF returned non-JSON"}
+        # Where downloads for THIS repo land — used to detect local copies.
+        # (download_hf_file flattens subpaths to the file name.)
+        dest_dir: Path | None = None
+        try:
+            cfg = load_config()
+            if cfg.install_dir:
+                dest_dir = Path(cfg.install_dir) / "models" / repo_id
+        except ConfigError:
+            pass
+        files = []
+        for e in entries:
+            if not (
+                isinstance(e, dict)
+                and e.get("type") == "file"
+                and e.get("path", "").lower().endswith(".gguf")
+            ):
+                continue
+            name = e["path"]
+            entry = {"name": name, "size": int(e.get("size") or 0)}
+            if dest_dir is not None:
+                p = dest_dir / name.rsplit("/", 1)[-1]
+                if p.exists():
+                    entry["downloaded"] = True
+                    entry["localPath"] = str(p)
+            files.append(entry)
+        files.sort(key=lambda f: f["name"])
+        return {"files": files}
+
+    def download_hf_file(self, repo_id: str, filename: str) -> dict:
+        """Download one file from a HF repo into <install_dir>/models/.
+
+        Returns {path} (the local file) or {error}. Progress is pushed to
+        the UI under component "model" (the shared progress channel).
+        """
+        repo_id = repo_id.strip().strip("/")
+        if not repo_id or not filename:
+            return {"error": "missing repo or filename"}
+        try:
+            cfg = load_config()
+            if not cfg.install_dir:
+                raise ConfigError("install_dir not set — run the wizard first")
+        except ConfigError as e:
+            return {"error": str(e)}
+        dest_dir = Path(cfg.install_dir) / "models" / repo_id
+        dest = dest_dir / filename.rsplit("/", 1)[-1]
+        url = f"{self.HF}/{repo_id}/resolve/main/{filename}"
+
+        def _on_progress(received: int, total: int | None) -> None:
+            self._push_progress(
+                {"component": "model", "file": dest.name, "received": received, "total": total}
+            )
+
+        try:
+            # ponytail: no resume — a dropped 20 GB GGUF restarts. Add a
+            # Range header when Will's connection actually drops mid-download.
+            updater.download(url, dest, None, timeout=600.0, progress=_on_progress)
+            return {"path": str(dest)}
+        except (updater.UpdateError, OSError) as e:
+            return {"error": str(e)}
 
 
 class AppUpdateApi(_ApiBase):

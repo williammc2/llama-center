@@ -361,6 +361,120 @@ class TestKeyMapping:
         assert out["closeToTray"] is False
 
 
+class TestModelApi:
+    """HF discovery + download + the speed probe."""
+
+    def test_list_hf_files_filters_gguf(self, home, monkeypatch):
+        from llama_center import api as apimod
+
+        captured = {}
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return [
+                    {"type": "file", "path": "model-Q4_K_M.gguf", "size": 100},
+                    {"type": "file", "path": "model-Q5_K_M.gguf", "size": 200},
+                    {"type": "file", "path": "README.md", "size": 5},
+                    {"type": "directory", "path": "sub", "size": 0},
+                ]
+
+        def fake_get(url, headers=None, timeout=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            return _Resp()
+
+        monkeypatch.setattr(apimod.requests, "get", fake_get)
+        res = Api().list_hf_files("org/model")
+        assert captured["url"] == "https://huggingface.co/api/models/org/model/tree/main"
+        assert res["files"] == [
+            {"name": "model-Q4_K_M.gguf", "size": 100},
+            {"name": "model-Q5_K_M.gguf", "size": 200},
+        ]
+
+    def test_list_hf_files_marks_downloaded(self, home, monkeypatch):
+        """A file already in <install_dir>/models/<repo>/ is flagged, with its path."""
+        from llama_center import api as apimod
+
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        # Simulate a previous download of the Q4 file.
+        local = root / "models" / "org" / "model"
+        local.mkdir(parents=True)
+        (local / "model-Q4_K_M.gguf").write_bytes(b"x")
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return [
+                    {"type": "file", "path": "model-Q4_K_M.gguf", "size": 100},
+                    {"type": "file", "path": "model-Q5_K_M.gguf", "size": 200},
+                ]
+
+        monkeypatch.setattr(apimod.requests, "get", lambda *a, **k: _Resp())
+        res = Api().list_hf_files("org/model")
+        by_name = {f["name"]: f for f in res["files"]}
+        assert by_name["model-Q4_K_M.gguf"]["downloaded"] is True
+        assert by_name["model-Q4_K_M.gguf"]["localPath"].endswith("model-Q4_K_M.gguf")
+        assert "downloaded" not in by_name["model-Q5_K_M.gguf"]
+
+    def test_list_hf_files_sends_token_when_set(self, home, monkeypatch):
+        from llama_center import api as apimod
+
+        captured = {}
+
+        class _Resp:
+            status_code = 200
+
+            def json(self):
+                return []
+
+        def fake_get(url, headers=None, timeout=None):
+            captured["headers"] = headers
+            return _Resp()
+
+        monkeypatch.setattr(apimod.requests, "get", fake_get)
+        Api().save_config({"version": 1, "installDir": str(home / "root"), "hfToken": "hf_abc"})
+        Api().list_hf_files("org/model")
+        assert captured["headers"] == {"Authorization": "Bearer hf_abc"}
+
+    def test_list_hf_files_404(self, home, monkeypatch):
+        from llama_center import api as apimod
+
+        class _Resp:
+            status_code = 404
+
+        monkeypatch.setattr(apimod.requests, "get", lambda *a, **k: _Resp())
+        res = Api().list_hf_files("org/nope")
+        assert "not found" in res["error"]
+
+    def test_download_hf_file_downloads_to_models_dir(self, home, monkeypatch):
+        """URL construction + dest dir. Byte-copying is covered by the
+        updater tests, so we stub download and assert where it's pointed."""
+        from llama_center import api as apimod
+
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+
+        captured = {}
+
+        def fake_download(url, dest, sha, timeout=60.0, progress=None):
+            captured["url"] = url
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(b"GGUF-BYTES")
+            return dest
+
+        monkeypatch.setattr(apimod.updater, "download", fake_download)
+        res = Api().download_hf_file("org/model", "model.gguf")
+        assert "path" in res, res
+        p = Path(res["path"])
+        assert p == root / "models" / "org" / "model" / "model.gguf"
+        assert captured["url"].endswith("/org/model/resolve/main/model.gguf")
+        assert p.read_bytes() == b"GGUF-BYTES"
+
+
 class TestAppUpdate:
     def test_download_and_launch_installer_no_url(self, home, monkeypatch):
         """A non-URL should fail gracefully (not crash)."""

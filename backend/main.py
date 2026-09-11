@@ -28,6 +28,16 @@ FROZEN = getattr(sys, "frozen", False)
 if not FROZEN:
     sys.path.insert(0, str(REPO_ROOT / "backend"))
 
+# Dev mode (`dev.bat` passes --dev): a second, parallel instance that never
+# collides with a running production app — its own singleton lock, window
+# title, tray icon and WebView2 profile. Same config.json and install dir,
+# which is the point: test against the real setup.
+IS_DEV = not FROZEN and "--dev" in sys.argv
+APP_NAME = "llama-center (dev)" if IS_DEV else "llama-center"
+# Singleton lock + WebView2 profile identity: the dev instance runs in
+# parallel with a production app, so it needs its own of both.
+APP_KEY = "llama-center-dev" if IS_DEV else "llama-center"
+
 
 def dist_dir() -> Path:
     """Where the built UI lives: repo dist/ in dev, _MEIPASS/dist when frozen."""
@@ -47,6 +57,7 @@ from llama_center.api import (  # noqa: E402
     AppUpdateApi,
     ComponentApi,
     ConfigApi,
+    ModelApi,
     ProcessApi,
     SwapConfigApi,
 )
@@ -57,7 +68,7 @@ _tray_icon: pystray.Icon | None = None
 _force_quit = False
 
 
-class Api(ConfigApi, ComponentApi, ProcessApi, SwapConfigApi, AppUpdateApi):
+class Api(ConfigApi, ComponentApi, ProcessApi, SwapConfigApi, ModelApi, AppUpdateApi):
     """The surface exposed to the UI as window.pywebview.api.
 
     Composed from the mixins in llama_center.api (all sharing _ApiBase) —
@@ -121,7 +132,7 @@ def start_tray(window, api: Api) -> None:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", lambda icon, item: _tray_quit(window)),
         )
-        icon = pystray.Icon("llama-center", make_icon(), "llama-center")
+        icon = pystray.Icon(APP_KEY, make_icon(), APP_NAME)
         icon.menu = menu
         _tray_icon = icon
         icon.run()
@@ -158,7 +169,7 @@ def main() -> int:
     # self-update the old process may still be shutting down (stopping
     # llama-swap) when the installer launches the new one. If it dies without
     # answering, we take over its lock instead of exiting into nothing.
-    lock = single.Singleton()
+    lock = single.Singleton(APP_KEY)
     if not single.acquire_or_takeover(lock):
         time.sleep(0.3)  # let the first instance process the show before we exit
         return 0
@@ -167,7 +178,7 @@ def main() -> int:
     # (the previous instance tore it down on exit); after a self-update it
     # removes the profile the dying instance left half-closed — the cause of
     # the black first window. Must run only when we own the lock (above).
-    single.wipe_webview_profile()
+    single.wipe_webview_profile(APP_KEY)
 
     api = Api()
     atexit.register(_shutdown_managed, api)
@@ -178,7 +189,7 @@ def main() -> int:
     threading.Thread(target=updater.sweep_stale_installers, daemon=True).start()
 
     window = webview.create_window(
-        "llama-center",
+        APP_NAME,
         str(dist),
         width=1080,
         height=760,
@@ -214,7 +225,7 @@ def main() -> int:
     start_tray(window, api)
     threading.Thread(target=_maybe_autostart_swap, args=(api,), daemon=True).start()
 
-    webview.start(storage_path=str(single.webview_profile_dir()))
+    webview.start(storage_path=str(single.webview_profile_dir(APP_KEY)))
 
     if _tray_icon is not None:
         with contextlib.suppress(Exception):

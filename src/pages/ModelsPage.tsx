@@ -7,6 +7,8 @@ import {
   type FlagGroups,
 } from '../lib/flagGroups'
 import { inputCls, selectCls, FlagToggle } from '../components/ui'
+import { Progress } from '../components/Progress'
+import { useDownloadProgress } from '../lib/useDownloadProgress'
 
 const emptyModel = (): SwapModelDef => ({
   name: '',
@@ -126,6 +128,140 @@ function NumInput({
   )
 }
 
+/** Human-readable byte size (GB/MB) for the HF file list. */
+function fmtSize(n: number): string {
+  if (n >= 1 << 30) return `${(n / (1 << 30)).toFixed(1)} GB`
+  if (n >= 1 << 20) return `${Math.round(n / (1 << 20))} MB`
+  return `${Math.round(n / 1024)} KB`
+}
+
+/**
+ * "Browse HuggingFace" — paste a repo id, list its .gguf files, download one
+ * (or select an already-downloaded one) and fill the model's gguf/mmproj
+ * field with the local path.
+ *
+ * State is local to the picker (repo input, file list, target field,
+ * download-in-flight). The download progress rides the shared
+ * `useDownloadProgress` channel, filtered to `component === 'model'` so
+ * other components' progress never renders here.
+ */
+function HfPicker({ onSelect }: { onSelect: (field: 'model' | 'mmproj', path: string) => void }) {
+  const [repo, setRepo] = useState('')
+  const [files, setFiles] = useState<Array<{ name: string; size: number; downloaded?: boolean; localPath?: string }>>([])
+  const [target, setTarget] = useState<'model' | 'mmproj'>('model')
+  const [loading, setLoading] = useState(false)
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [err, setErr] = useState('')
+  const progress = useDownloadProgress((p) => p.component === 'model')
+
+  const browse = async () => {
+    const id = repo.trim()
+    if (!id) return
+    setLoading(true)
+    setErr('')
+    setFiles([])
+    const res = await bridge.listHfFiles(id)
+    if (res.error) setErr(res.error)
+    else setFiles(res.files ?? [])
+    setLoading(false)
+  }
+
+  const download = async (f: { name: string; downloaded?: boolean; localPath?: string }) => {
+    const id = repo.trim()
+    if (f.downloaded && f.localPath) {
+      // Already on disk: confirm before re-downloading (overwrites the file).
+      // "No" = just select the existing copy.
+      if (!window.confirm(`${f.name} is already downloaded.\n\nOK = re-download (overwrites)\nCancel = use the existing file`)) {
+        onSelect(target, f.localPath)
+        return
+      }
+    }
+    setDownloading(f.name)
+    setErr('')
+    const res = await bridge.downloadHfFile(id, f.name)
+    if (res.error) setErr(res.error)
+    else if (res.path) {
+      // Mark it done in the list so the button flips to "done" (no re-click
+      // surprise) — the next Browse re-detects from disk anyway.
+      setFiles((fs) => fs.map((x) => (x.name === f.name ? { ...x, downloaded: true, localPath: res.path } : x)))
+      onSelect(target, res.path)
+    }
+    setDownloading(null)
+  }
+
+  return (
+    <div className="mt-2 rounded border border-neutral-800 bg-neutral-900/40 p-2">
+      <div className="flex gap-2">
+        <input
+          className={inputCls + ' flex-1'}
+          value={repo}
+          onChange={(e) => setRepo(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void browse()
+          }}
+          placeholder="HuggingFace repo: org/model (e.g. Qwen/Qwen2.5-7B-Instruct-GGUF)"
+        />
+        <button
+          type="button"
+          onClick={() => void browse()}
+          disabled={loading || !repo.trim()}
+          className="rounded-md border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 transition-colors hover:border-neutral-500 disabled:opacity-50"
+        >
+          {loading ? '…' : 'Browse'}
+        </button>
+      </div>
+      {files.length > 0 && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="text-neutral-500">fill field:</span>
+          {(['model', 'mmproj'] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => setTarget(f)}
+              className={
+                'rounded border px-2 py-0.5 font-mono transition-colors ' +
+                (target === f
+                  ? 'border-sky-600 text-sky-300'
+                  : 'border-neutral-700 text-neutral-400 hover:border-neutral-500')
+              }
+            >
+              {f === 'model' ? 'model (.gguf)' : 'mmproj'}
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <p className="mt-1 text-xs text-red-400">{err}</p>}
+      {files.length > 0 && (
+        <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto">
+          {files.map((f) => (
+            <li key={f.name} className="flex items-center gap-2 font-mono text-xs">
+              <span className="min-w-0 flex-1 truncate text-neutral-300" title={f.name}>
+                {f.name}
+              </span>
+              <span className="shrink-0 text-neutral-500">{fmtSize(f.size)}</span>
+              <button
+                type="button"
+                onClick={() => void download(f)}
+                disabled={downloading !== null}
+                title={f.downloaded ? 'already downloaded — click to re-download or select' : 'download'}
+                className={
+                  'shrink-0 rounded border px-2 py-0.5 transition-colors disabled:opacity-50 ' +
+                  (f.downloaded
+                    ? 'border-emerald-700 text-emerald-400 hover:border-emerald-500'
+                    : 'border-neutral-700 text-neutral-300 hover:border-sky-600')
+                }
+              >
+                {downloading === f.name ? '…' : f.downloaded ? 'done' : '↓'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {progress && <Progress p={progress} />}
+    </div>
+  )
+}
+
 /** The llama-swap models editor: one collapsible box per model with
  *  structured flag sections replacing the raw extra_flags textarea. */
 export function ModelsPage() {
@@ -138,6 +274,8 @@ export function ModelsPage() {
   // removing a model must not make the next one inherit its open state).
   const [open, setOpen] = useState<Record<number, boolean>>({})
   const [sectionOpen, setSectionOpen] = useState<Record<string, boolean>>({})
+  // Which model's HuggingFace picker is open (one at a time, by stable id).
+  const [hfOpen, setHfOpen] = useState<number | null>(null)
 
   useEffect(() => {
     void bridge
@@ -507,12 +645,26 @@ export function ModelsPage() {
                       </Field>
                       <div className="col-span-2">
                         <Field label="model (.gguf)" error={errs.model}>
-                          <input
-                            className={inputCls}
-                            value={m.model}
-                            onChange={(e) => set(m.id, { model: e.target.value })}
-                            placeholder="D:\models\....gguf"
-                          />
+                          <div className="flex gap-2">
+                            <input
+                              className={inputCls + ' flex-1'}
+                              value={m.model}
+                              onChange={(e) => set(m.id, { model: e.target.value })}
+                              placeholder="D:\models\....gguf"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setHfOpen(hfOpen === m.id ? null : m.id)}
+                              className={
+                                'shrink-0 rounded-md border px-3 py-1.5 text-xs transition-colors ' +
+                                (hfOpen === m.id
+                                  ? 'border-sky-600 text-sky-300'
+                                  : 'border-neutral-700 text-neutral-300 hover:border-neutral-500')
+                              }
+                            >
+                              Browse HF
+                            </button>
+                          </div>
                         </Field>
                       </div>
                       <Field label="mmproj (optional)">
@@ -549,6 +701,11 @@ export function ModelsPage() {
                       </Field>
                       {renderFlagSections(m)}
                     </div>
+                    {hfOpen === m.id && (
+                      <HfPicker
+                        onSelect={(field, path) => set(m.id, field === 'model' ? { model: path } : { mmproj: path })}
+                      />
+                    )}
                   </div>
                 )}
               </div>

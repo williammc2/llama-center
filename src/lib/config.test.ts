@@ -56,6 +56,15 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ version: 1, installDir: '/x', llamaSwapPort: 80.5 })).toThrow()
   })
 
+  it('hfToken: missing → empty string, present → kept', () => {
+    expect(parseConfig({ version: 1, installDir: '/x' }).hfToken).toBe('')
+    expect(parseConfig({ version: 1, installDir: '/x', hfToken: 'hf_abc' }).hfToken).toBe('hf_abc')
+  })
+
+  it('rejects non-string hfToken', () => {
+    expect(() => parseConfig({ version: 1, installDir: '/x', hfToken: 42 })).toThrow(/hfToken/)
+  })
+
   it('round-trips through serializeConfig', () => {
     const cfg = parseConfig({ version: 1, installDir: '/x', backend: 'cuda', cudaMajor: 12 })
     const json = serializeConfig(cfg)

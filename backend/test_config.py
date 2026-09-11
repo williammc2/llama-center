@@ -123,6 +123,14 @@ class TestParseConfig:
         with pytest.raises(ConfigError, match="lang"):
             parse_config({"version": 1, "lang": "fr"})
 
+    def test_hf_token_defaults_empty_and_kept(self):
+        assert parse_config({"version": 1}).hf_token == ""
+        assert parse_config({"version": 1, "hf_token": "hf_abc"}).hf_token == "hf_abc"
+
+    def test_hf_token_wrong_type_raises(self):
+        with pytest.raises(ConfigError, match="hf_token"):
+            parse_config({"version": 1, "hf_token": 42})
+
     def test_cuda_family_defaults_to_cudart(self):
         cfg = parse_config({"version": 1, "backend": "cuda"})
         assert cfg.cuda_family == "cudart"

@@ -12,6 +12,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [2/2] Starting llama-center (backend\.venv, Python 3.11)...
-backend\.venv\Scripts\python.exe backend\main.py
+echo [2/2] Starting llama-center DEV (backend\.venv, Python 3.11)...
+rem --dev: separate singleton lock + WebView2 profile, so this window can
+rem run next to a production llama-center without the "second instance" exit.
+backend\.venv\Scripts\python.exe backend\main.py --dev
 endlocal

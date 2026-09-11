@@ -90,6 +90,11 @@ export interface Bridge {
   openPath(path: string): Promise<{ opened?: boolean; error?: string }>
   /** Download the app installer and launch it (overwrites existing install). */
   downloadAndLaunchInstaller(url: string): Promise<{ launched?: boolean; closing?: boolean; error?: string }>
+  /** List .gguf files in a HuggingFace repo (main branch).
+   *  `downloaded`/`localPath` mark files already on disk (select, don't re-download). */
+  listHfFiles(repoId: string): Promise<{ files?: Array<{ name: string; size: number; downloaded?: boolean; localPath?: string }>; error?: string }>
+  /** Download one file from a HF repo into <installDir>/models/. Returns the local path. */
+  downloadHfFile(repoId: string, filename: string): Promise<{ path?: string; error?: string }>
   /** Subscribe to download progress pushes. Returns an unsubscribe function. */
   onDownloadProgress(cb: (p: DownloadProgress) => void): Promise<() => void>
 }
@@ -119,6 +124,8 @@ interface PywebviewApi {
   open_url(url: string): Promise<{ opened?: boolean; error?: string }>
   open_path(path: string): Promise<{ opened?: boolean; error?: string }>
   download_and_launch_installer(url: string): Promise<{ launched?: boolean; closing?: boolean; error?: string }>
+  list_hf_files(repo_id: string): Promise<{ files?: Array<{ name: string; size: number; downloaded?: boolean; localPath?: string }>; error?: string }>
+  download_hf_file(repo_id: string, filename: string): Promise<{ path?: string; error?: string }>
 }
 
 declare global {
@@ -231,6 +238,12 @@ const pywebview: Bridge = {
     if (res.error) throw new Error(res.error)
     return { launched: res.launched === true, closing: res.closing === true }
   },
+  async listHfFiles(repoId) {
+    return window.pywebview!.api.list_hf_files(repoId)
+  },
+  async downloadHfFile(repoId, filename) {
+    return window.pywebview!.api.download_hf_file(repoId, filename)
+  },
   async onDownloadProgress(cb) {
     progressSubscribers.add(cb)
     if (!progressWired) {
@@ -326,6 +339,12 @@ const browser: Bridge = {
   },
   async downloadAndLaunchInstaller() {
     throw new Error(SHELL_ONLY)
+  },
+  async listHfFiles() {
+    return { error: SHELL_ONLY }
+  },
+  async downloadHfFile() {
+    return { error: SHELL_ONLY }
   },
   async onDownloadProgress() {
     return () => {}

@@ -177,6 +177,13 @@ class TestWebViewProfile:
         # and it is NOT the pywebview default
         assert d.name != "pywebview"
 
+    def test_profile_dir_honours_dev_name(self, profile_root):
+        """The dev instance gets its own profile folder (no engine race)."""
+        d = S.webview_profile_dir("llama-center-dev")
+        assert d.name == "webview2"
+        assert d.parent.name == "llama-center-dev"
+        assert d != S.webview_profile_dir()
+
     def test_wipe_removes_profile(self, profile_root):
         d = S.webview_profile_dir()
         (d / "EBWebView").mkdir(parents=True)

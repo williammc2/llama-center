@@ -41,6 +41,8 @@ export interface AppConfig {
   closeToTray: boolean
   /** Update checks on start + manual button (Q7: both). */
   checkUpdatesOnStart: boolean
+  /** HuggingFace token (optional); '' = anonymous (public files work). */
+  hfToken: string
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -58,6 +60,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   autoStartLlamaSwap: false,
   closeToTray: true,
   checkUpdatesOnStart: true,
+  hfToken: '',
 }
 
 /**
@@ -101,6 +104,12 @@ export function parseConfig(raw: unknown): AppConfig {
   const cudaMajor = o.cudaMajor === 12 || o.cudaMajor === 13 ? o.cudaMajor : undefined
   const lang = (o.lang ?? 'en') as Lang
   if (!['en', 'pt-BR'].includes(lang)) throw new Error(`config: unknown lang ${String(lang)}`)
+  // Optional token: missing → '', present-but-not-string throws (mirrors Python).
+  const hfToken = (v: unknown): string => {
+    if (v === undefined) return ''
+    if (typeof v !== 'string') throw new Error('config: hfToken must be a string')
+    return v
+  }
 
   return {
     version: 1,
@@ -118,6 +127,7 @@ export function parseConfig(raw: unknown): AppConfig {
     autoStartLlamaSwap: bool(o.autoStartLlamaSwap, false),
     closeToTray: bool(o.closeToTray, true),
     checkUpdatesOnStart: bool(o.checkUpdatesOnStart, true),
+    hfToken: hfToken(o.hfToken),
   }
 }
 

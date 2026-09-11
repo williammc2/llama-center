@@ -45,6 +45,7 @@ class AppConfig:
     auto_start_llama_swap: bool = False
     close_to_tray: bool = True
     check_updates_on_start: bool = True
+    hf_token: str = ""  # HuggingFace token (optional); "" = anonymous
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -142,6 +143,10 @@ def parse_config(raw: object) -> AppConfig:
             f"config: llama_cpp_installed must be a string or null, got {cpp_installed!r}"
         )
 
+    hf_token = raw.get("hf_token", "")
+    if not isinstance(hf_token, str):
+        raise ConfigError(f"config: hf_token must be a string, got {hf_token!r}")
+
     def _bool(key: str, dflt: bool) -> bool:
         v = raw.get(key)
         return dflt if v is None else bool(v)
@@ -162,6 +167,7 @@ def parse_config(raw: object) -> AppConfig:
         auto_start_llama_swap=_bool("auto_start_llama_swap", False),
         close_to_tray=_bool("close_to_tray", True),
         check_updates_on_start=_bool("check_updates_on_start", True),
+        hf_token=hf_token,
     )
 
 

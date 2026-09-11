@@ -254,7 +254,7 @@ def acquire_or_takeover(s: Singleton, timeout: float = 8.0, poll: float = 0.5) -
 
 
 # ---------------------------------------------------------------------- webview2
-def webview_profile_dir() -> Path:
+def webview_profile_dir(name: str = "llama-center") -> Path:
     """Dedicated WebView2 user-data folder for this app.
 
     pywebview's default is a *shared* ``%APPDATA%/pywebview`` — every app
@@ -264,15 +264,19 @@ def webview_profile_dir() -> Path:
     (lock files, cache, Singleton) and the new window can come up black.
     A per-app folder removes the cross-app race; the update race is handled
     by :func:`wipe_webview_profile` at the next boot.
+
+    ``name`` is the profile folder (and app identity): the dev instance
+    passes "llama-center-dev" so a running production app and a dev window
+    never share an engine profile.
     """
     if os.name == "nt":
         base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "llama-center" / "webview2"
+    return Path(base) / name / "webview2"
 
 
-def wipe_webview_profile() -> None:
+def wipe_webview_profile(name: str = "llama-center") -> None:
     """Drop the WebView2 user-data folder so the engine boots from scratch.
 
     Called on every boot, right before the window is created. Normally the
@@ -281,7 +285,7 @@ def wipe_webview_profile() -> None:
     dying instance may have left half-closed — the cause of the black
     first window. Best-effort: a locked file must never block startup.
     """
-    d = webview_profile_dir()
+    d = webview_profile_dir(name)
     if not d.exists():
         return
     with contextlib.suppress(Exception):
