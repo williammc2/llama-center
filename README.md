@@ -34,9 +34,19 @@ the app is, how it works, and where things live.
   threads, and structured flag groups: sampling, speculative decoding, flash
   attention, KV-cache dtype, batching, reasoning, image) rendered into
   `llama-swap.yaml`. The llama-server path is abstracted to the managed
-  llama.cpp. Import an existing config (unknown flags preserved verbatim).
-- **Server controls** — start/stop llama-swap, live terminal logs (ring buffer +
-  rotating files), status via polling llama-swap's own HTTP API, dashboard link.
+  llama.cpp. Import or export an existing config (unknown flags preserved
+  verbatim).
+- **Model downloads** — browse a HuggingFace repo, download its `.gguf` files
+  (progress + **resume**: a dropped download continues from the partial file
+  via a Range request), or select an already-downloaded copy. An optional HF
+  token unlocks gated repos.
+- **Model file manager** — lists every `.gguf` on disk across the default
+  models folder plus any **extra model roots** (Settings), grouped by repo.
+  Delete a single file or a whole repo folder; click a filename to copy its
+  path.
+- **Server controls** — start/stop/**restart** llama-swap, live terminal logs
+  (ring buffer + rotating files), status via polling llama-swap's own HTTP
+  API, dashboard link.
 - **Tray + lifecycle** — system tray icon (generated at runtime), close-to-tray,
   start-with-system (opt-in), and auto-start the server with the app when the
   port is free.
@@ -115,6 +125,10 @@ backend/.venv/Scripts/python.exe -m pytest backend -q   # Python backend
 #   backend/.venv/bin/python -m pytest backend -q       # Linux
 ```
 
+Pre-commit gate: `git commit` runs typecheck + tests + lint (TS and Python)
+automatically. Activate per clone: `git config core.hooksPath scripts`.
+Bypass when needed: `git commit --no-verify`.
+
 ## Packaging
 
 ```
@@ -154,6 +168,7 @@ src/               # React UI
                    #   flagGroups.ts
 llama-center.spec  # PyInstaller spec (onedir)
 installer/         # Inno Setup script (Windows installer)
+scripts/           # pre-commit gate (activate: git config core.hooksPath scripts)
 build.bat/.sh      # UI build + packaging
 dev.bat/.sh        # dev run (rebuild UI + launch)
 .github/workflows/ # ci.yml (test + package + release)

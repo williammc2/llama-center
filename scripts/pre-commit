@@ -6,26 +6,44 @@
 #   TS:     tsc --noEmit, vitest run, eslint
 #   Python: pytest, ruff
 # Not gated: mypy (3 known stub errors — noise, see skill), pnpm build (tsc covers it).
+#
+# Quiet on success: each check's output is captured and shown ONLY if it fails.
+# (eslint prints 14 known warnings on every run — that wall of red is noise,
+# not failure. Warnings don't block the commit; errors do.)
 set -u
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root" || exit 1
 
 fail=0
+# The canonical venv (backend/.venv) has pytest; bare `python` may resolve to
+# a system Python without it. Fall back to `python` only when the venv is gone.
+if [ -x "backend/.venv/Scripts/python.exe" ]; then
+  PY="backend/.venv/Scripts/python.exe"
+elif [ -x "backend/.venv/bin/python" ]; then
+  PY="backend/.venv/bin/python"
+else
+  PY="python"
+fi
+
 run() {
   local label="$1"; shift
-  echo "── $label"
-  if ! "$@"; then
+  local out
+  if out="$("$@" 2>&1)"; then
+    echo "  ✓ $label"
+  else
     fail=1
-    echo "   ✗ $label failed"
+    echo "  ✗ $label"
+    # Indent the captured output so the failure is readable.
+    printf '%s\n' "$out" | sed 's/^/      /'
   fi
 }
 
-run "typecheck (tsc --noEmit)"        pnpm run --silent typecheck
-run "unit tests (vitest)"             pnpm run --silent test
-run "lint (eslint)"                   pnpm run --silent lint
-run "python tests (pytest)"           bash -c "cd backend && python -m pytest -q"
-run "python lint (ruff)"              bash -c "cd backend && uvx ruff@0.14 check llama_center/ main.py test_*.py"
+run "typecheck (tsc --noEmit)"  pnpm run --silent typecheck
+run "unit tests (vitest)"       pnpm run --silent test
+run "lint (eslint)"             pnpm run --silent lint
+run "python tests (pytest)"     "$PY" -m pytest backend -q
+run "python lint (ruff)"        bash -c "cd backend && uvx ruff@0.14 check llama_center/ main.py test_*.py"
 
 if [ "$fail" -ne 0 ]; then
   echo
