@@ -155,31 +155,34 @@ function versionDesc(a: ParsedAsset, b: ParsedAsset): number {
   return (b.version ?? '').localeCompare(a.version ?? '', undefined, { numeric: true })
 }
 
-function pickHighest(pool: ParsedAsset[]): ParsedAsset {
-  const top = [...pool].sort(versionDesc)[0]
-  // Callers only invoke this on non-empty pools (guarded by `length > 0`).
-  if (!top) throw new Error('pickHighest: empty pool')
-  return top
+function pickHighest(pool: ParsedAsset[]): ParsedAsset | null {
+  if (pool.length === 0) return null
+  const sorted = [...pool].sort(versionDesc)
+  const top = sorted[0]
+  return top ?? null
 }
 
-/**
- * Pick for a non-CUDA backend. SYCL on ubuntu ships both `fp16` and `fp32` —
- * a real precision choice, not a no-op — so honor `syclPrecision` (default
- * `fp16`, the standard for LLM weights) instead of letting `pickHighest`
- * coin-flip to fp32. Backends without a version axis (cpu, vulkan, win sycl)
- * are a direct pick.
- */
-function resolveVersioned(pool: ParsedAsset[], req: ResolveRequest): ResolveResult {
-  if (req.backend === 'sycl') {
-    const hasAxis = pool.some((a) => a.version === 'fp16' || a.version === 'fp32')
-    if (hasAxis) {
-      const prec = req.syclPrecision ?? 'fp16'
-      const exact = pool.filter((a) => a.version === prec)
-      if (exact.length > 0) return { status: 'ok', asset: pickHighest(exact), fellBack: false }
-      return { status: 'ok', asset: pickHighest(pool), fellBack: true, reason: `sycl ${prec} not available; using ${pickHighest(pool).version}` }
-    }
+function resolveNonCuda(pool: ParsedAsset[], req: ResolveRequest): ResolveResult {
+  if (req.backend !== 'sycl') {
+    const top = pickHighest(pool)
+    return { status: 'ok', asset: top!, fellBack: false }
   }
-  return { status: 'ok', asset: pickHighest(pool), fellBack: false }
+
+  // SYCL on ubuntu has fp16/fp32 precision axis
+  const hasPrecisionAxis = pool.some((a) => a.version === 'fp16' || a.version === 'fp32')
+  if (!hasPrecisionAxis) {
+    const top = pickHighest(pool)
+    return { status: 'ok', asset: top!, fellBack: false }
+  }
+
+  const precision = req.syclPrecision ?? 'fp16'
+  const exact = pool.filter((a) => a.version === precision)
+  if (exact.length > 0) {
+    return { status: 'ok', asset: pickHighest(exact)!, fellBack: false }
+  }
+
+  const fallback = pickHighest(pool)!
+  return { status: 'ok', asset: fallback, fellBack: true, reason: `sycl ${precision} not available; using ${fallback.version}` }
 }
 
 /** Human-readable list of what IS available for a (os, arch) cell, for error UI. */
@@ -190,60 +193,76 @@ function describe(assets: ParsedAsset[], os: Os, arch: Arch): string[] {
     .sort()
 }
 
-/**
- * Resolve a request against one build's asset set.
- *
- * Fallback chain (CUDA): exact major+family → any major+family → any major+other family.
- * Non-CUDA backends have no version axis, so it is a direct pick.
- */
 export function resolve(assets: ParsedAsset[], req: ResolveRequest): ResolveResult {
   const os = OS_MAP[req.os]
   const inCell = assets.filter((a) => a.os === os && a.arch === req.arch && a.backend === req.backend)
+
   if (inCell.length === 0) {
-    return { status: 'no-asset', reason: `no ${req.backend} build for ${os}-${req.arch}`, available: describe(assets, os, req.arch) }
+    return {
+      status: 'no-asset',
+      reason: `no ${req.backend} build for ${os}-${req.arch}`,
+      available: describe(assets, os, req.arch),
+    }
   }
 
   if (req.backend !== 'cuda') {
-    return resolveVersioned(inCell, req)
+    return resolveNonCuda(inCell, req)
   }
 
-  const fam: Family = req.family ?? 'cudart'
-  const sameFam = inCell.filter((a) => a.family === fam)
-  const otherFam = inCell.filter((a) => a.family !== fam)
+  const family = req.family ?? 'cudart'
+  const sameFamily = inCell.filter((a) => a.family === family)
+  const otherFamily = inCell.filter((a) => a.family !== family)
 
-  type Tier = { pool: ParsedAsset[]; fellBack: boolean; reason?: string }
-  const tiers: Tier[] = []
-  if (req.cudaMajor != null) {
-    const want = req.cudaMajor
-    tiers.push({ pool: sameFam.filter((a) => a.cudaMajor === want), fellBack: false })
-    // hardMajor: the requested major is a hard constraint → prefer the right
-    // major in the *other* family over the requested family at the wrong major.
-    // (e.g. an RTX 5090 that needs CUDA 13 should get plain-13.x, not cudart-12.4.)
-    if (req.hardMajor) {
-      tiers.push({
-        pool: otherFam.filter((a) => a.cudaMajor === want),
-        fellBack: true,
-        reason: `cuda-${want}.* not available in ${fam} family for ${os}-${req.arch}; using ${otherFam[0]?.family ?? 'other'} family (hardMajor)`,
-      })
-    }
-    const present = [...new Set(sameFam.map((a) => a.cudaMajor).filter((m): m is number => m != null))].sort((a, b) => b - a)
-    tiers.push({
-      pool: sameFam,
+  // No major specified: pick highest from same family, fallback to other
+  if (req.cudaMajor == null) {
+    const exact = pickHighest(sameFamily)
+    if (exact) return { status: 'ok', asset: exact, fellBack: false }
+
+    const fallback = pickHighest(otherFamily)
+    return {
+      status: 'ok',
+      asset: fallback!,
       fellBack: true,
-      reason: `cuda-${want}.* not available for ${os}-${req.arch} (${fam}); available majors: ${present.map((m) => m).join(', ') || 'none'}`,
-    })
-    tiers.push({ pool: otherFam, fellBack: true, reason: `${fam} family not available for ${os}-${req.arch}; using ${otherFam[0]?.family ?? 'other'} family` })
-  } else {
-    tiers.push({ pool: sameFam, fellBack: false })
-    tiers.push({ pool: otherFam, fellBack: true, reason: `${fam} family not available for ${os}-${req.arch}; using ${otherFam[0]?.family ?? 'other'} family` })
-  }
-
-  for (const t of tiers) {
-    if (t.pool.length > 0) {
-      return { status: 'ok', asset: pickHighest(t.pool), fellBack: t.fellBack, reason: t.reason }
+      reason: `${family} family not available for ${os}-${req.arch}; using ${fallback!.family} family`,
     }
   }
-  return { status: 'no-asset', reason: `no cuda build for ${os}-${req.arch}`, available: describe(assets, os, req.arch) }
+
+  // Exact match: same family, same major
+  const exact = pickHighest(sameFamily.filter((a) => a.cudaMajor === req.cudaMajor))
+  if (exact) return { status: 'ok', asset: exact, fellBack: false }
+
+  // hardMajor: prefer right major in other family over wrong major in same family
+  if (req.hardMajor) {
+    const otherExact = pickHighest(otherFamily.filter((a) => a.cudaMajor === req.cudaMajor))
+    if (otherExact) {
+      return {
+        status: 'ok',
+        asset: otherExact,
+        fellBack: true,
+        reason: `cuda-${req.cudaMajor}.* not available in ${family} family; using ${otherExact.family} family (hardMajor)`,
+      }
+    }
+  }
+
+  // Same family, different major
+  const sameFamilyFallback = pickHighest(sameFamily)
+  if (sameFamilyFallback) {
+    return {
+      status: 'ok',
+      asset: sameFamilyFallback,
+      fellBack: true,
+      reason: `cuda-${req.cudaMajor}.* not available; using cuda-${sameFamilyFallback.cudaMajor}.* (${family} family)`,
+    }
+  }
+
+  // Last resort: other family, any major
+  const lastResort = pickHighest(otherFamily)
+  return {
+    status: 'ok',
+    asset: lastResort!,
+    fellBack: true,
+    reason: `${family} family not available; using ${lastResort!.family} family`,
+  }
 }
 
 export interface BuildInfo {
