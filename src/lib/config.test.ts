@@ -10,7 +10,6 @@ describe('parseConfig', () => {
       backend: 'cuda',
       cudaMajor: 13,
       cudaFamily: 'cudart',
-      llamaCppPin: 'b10814',
       llamaSwapPort: 8085,
       lang: 'pt-BR',
       startWithSystem: true,

@@ -185,8 +185,7 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
             <span className="block text-sm text-neutral-200">backend</span>
             <span className="block font-mono text-xs text-neutral-500">
               {cfg.backend}
-              {cfg.backend === 'cuda' && cfg.cudaMajor ? ` (CUDA ${cfg.cudaMajor})` : ''} · pinned{' '}
-              {cfg.llamaCppPin ?? 'latest'}
+              {cfg.backend === 'cuda' && cfg.cudaMajor ? ` (CUDA ${cfg.cudaMajor})` : ''}
             </span>
           </span>
           <button

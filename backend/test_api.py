@@ -1,7 +1,6 @@
 """Tests for the pywebview Api surface (main.py) — the camelCase boundary."""
 import hashlib
 import io
-import socket
 import sys
 import threading
 import zipfile
@@ -33,7 +32,6 @@ class TestApi:
             "backend": "cuda",
             "cudaMajor": 13,
             "cudaFamily": "cudart",
-            "llamaCppPin": None,
             "llamaSwapPort": 9090,
             "lang": "pt-BR",
             "startWithSystem": False,
@@ -84,7 +82,7 @@ class TestApi:
     def test_get_detection_shape(self):
         api = Api()
         d = api.get_detection()
-        assert set(d) == {"os", "arch", "suggestCuda", "cudaMajorHint", "gpuName", "backends"}
+        assert set(d) == {"os", "arch", "suggestCuda", "backends"}
         assert isinstance(d["backends"], list)
 
     def test_key_mapping_includes_llama_swap_installed(self):
@@ -95,13 +93,6 @@ class TestApi:
 
         cfg = parse_config({"version": 1, "llama_swap_installed": 253})
         assert api._to_camel(cfg)["llamaSwapInstalled"] == 253
-
-    def test_probe_port_closed(self, home):
-        s = socket.socket()
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-        s.close()
-        assert Api().probe_port(port) is False
 
     def test_list_backups_empty(self, home):
         Api().save_config({"version": 1, "installDir": str(home / "root")})
@@ -372,7 +363,6 @@ class TestKeyMapping:
             "backend": "cpu",
             "cudaMajor": 12,
             "cudaFamily": "plain",
-            "llamaCppPin": "b10814",
             "llamaSwapPort": 8085,
             "lang": "en",
             "startWithSystem": True,
@@ -384,7 +374,6 @@ class TestKeyMapping:
         assert snake["first_run_done"] is True
         assert snake["install_dir"] == "/tmp/x"
         assert snake["cuda_major"] == 12
-        assert snake["llama_cpp_pin"] == "b10814"
         # and back
         from llama_center.config import parse_config
 

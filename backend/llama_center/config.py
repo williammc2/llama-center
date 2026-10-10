@@ -36,7 +36,6 @@ class AppConfig:
     backend: str = "cpu"
     cuda_major: int | None = None  # 12 | 13, only when backend == "cuda"
     cuda_family: str = "cudart"
-    llama_cpp_pin: str | None = None  # e.g. "b10814"; None = latest-with-asset
     llama_cpp_installed: str | None = None  # e.g. "b10816"; None = not installed yet
     llama_swap_port: int = 8085
     llama_swap_installed: int | None = None  # e.g. 253; None = not installed yet
@@ -134,10 +133,6 @@ def parse_config(raw: object) -> AppConfig:
         raise ConfigError(f"config: install_dir must be a string, got {install_dir!r}")
     install_dir = normalize_install_dir(install_dir)
 
-    pin = raw.get("llama_cpp_pin")
-    if pin is not None and not isinstance(pin, str):
-        raise ConfigError(f"config: llama_cpp_pin must be a string or null, got {pin!r}")
-
     cpp_installed = raw.get("llama_cpp_installed")
     if cpp_installed is not None and not isinstance(cpp_installed, str):
         raise ConfigError(
@@ -164,7 +159,6 @@ def parse_config(raw: object) -> AppConfig:
         backend=backend,
         cuda_major=cuda_major,
         cuda_family=cuda_family,
-        llama_cpp_pin=pin,
         llama_cpp_installed=cpp_installed,
         llama_swap_port=port,
         llama_swap_installed=swap_installed,

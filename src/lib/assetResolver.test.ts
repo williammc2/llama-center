@@ -204,45 +204,6 @@ describe('resolveLatest — "newest" is per-request, not global', () => {
   })
 })
 
-describe('resolve — sycl precision (was a silent coin-flip)', () => {
-  it('ubuntu x64 sycl defaults to fp16 (a stated default, not fp32)', () => {
-    const r = resolve(B10814, { os: 'linux', arch: 'x64', backend: 'sycl' })
-    expect(r.status).toBe('ok')
-    if (r.status === 'ok') {
-      expect(r.asset.name).toBe('llama-b10814-bin-ubuntu-sycl-fp16-x64.tar.gz')
-      expect(r.fellBack).toBe(false)
-    }
-  })
-
-  it('ubuntu x64 sycl fp32 → explicit override', () => {
-    const r = resolve(B10814, { os: 'linux', arch: 'x64', backend: 'sycl', syclPrecision: 'fp32' })
-    expect(r.status).toBe('ok')
-    if (r.status === 'ok') expect(r.asset.name).toBe('llama-b10814-bin-ubuntu-sycl-fp32-x64.tar.gz')
-  })
-
-  it('windows x64 sycl has no precision axis → direct pick, ignores syclPrecision', () => {
-    const r = resolve(B10814, { os: 'win', arch: 'x64', backend: 'sycl', syclPrecision: 'fp32' })
-    expect(r.status).toBe('ok')
-    if (r.status === 'ok') {
-      expect(r.asset.name).toBe('llama-b10814-bin-win-sycl-x64.zip')
-      expect(r.asset.version).toBeUndefined()
-    }
-  })
-
-  it('requested precision absent (future nightly edge) → falls back to available with reason', () => {
-    // b10814 always ships both precisions, so a synthetic single-precision
-    // set exercises the fellBack branch: request fp32, only fp16 exists.
-    const synth = parseAssets([{ name: 'llama-b10814-bin-ubuntu-sycl-fp16-x64.tar.gz', sizeMB: 51 }])
-    const r = resolve(synth, { os: 'linux', arch: 'x64', backend: 'sycl', syclPrecision: 'fp32' })
-    expect(r.status).toBe('ok')
-    if (r.status === 'ok') {
-      expect(r.fellBack).toBe(true)
-      expect(r.asset.name).toBe('llama-b10814-bin-ubuntu-sycl-fp16-x64.tar.gz')
-      expect(r.reason).toBe('sycl fp32 not available; using fp16')
-    }
-  })
-})
-
 describe('resolve — hardMajor (requested major as a hard constraint)', () => {
   it('real b10814: win x64 cuda-13 cudart is an EXACT match (both families ship 13.x on x64)', () => {
     // No fallback — the fixture has cudart-...-cuda-13.3-x64. This documents

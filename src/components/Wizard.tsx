@@ -53,7 +53,10 @@ export function Wizard({ detection, initial, onSaved, onBack }: WizardProps) {
       return
     }
     const cfg: AppConfig = {
-      ...DEFAULT_CONFIG,
+      // Reconfigure starts from the CURRENT config, not the defaults —
+      // otherwise the user's hfToken and toggles (startWithSystem,
+      // autoStartLlamaSwap, closeToTray, checkUpdatesOnStart) get wiped.
+      ...(initial ?? DEFAULT_CONFIG),
       firstRunDone: true,
       installDir: installDir.trim(),
       backend,
@@ -61,11 +64,6 @@ export function Wizard({ detection, initial, onSaved, onBack }: WizardProps) {
       cudaFamily: backend === 'cuda' ? cudaFamily : undefined,
       llamaSwapPort: port,
       lang,
-      // Reconfigure must not wipe a recorded install (the files still exist).
-      llamaSwapInstalled: initial?.llamaSwapInstalled ?? null,
-      llamaCppInstalled: initial?.llamaCppInstalled ?? null,
-      // …nor the user's extra model roots.
-      modelDirs: initial?.modelDirs ?? [],
     }
     setSaving(true)
     setError(null)

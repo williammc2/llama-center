@@ -54,12 +54,6 @@ export interface ResolveRequest {
    * when the major is genuinely required (e.g. an RTX 5090 that needs CUDA 13).
    */
   hardMajor?: boolean
-  /**
-   * SYCL precision, only meaningful for ubuntu sycl (assets ship fp16/fp32).
-   * Windows sycl has no precision axis and ignores this. Defaults to `fp16`
-   * when the axis exists and none is given — a stated default, overridable.
-   */
-  syclPrecision?: 'fp16' | 'fp32'
 }
 
 export type ResolveResult =
@@ -162,27 +156,9 @@ function pickHighest(pool: ParsedAsset[]): ParsedAsset | null {
   return top ?? null
 }
 
-function resolveNonCuda(pool: ParsedAsset[], req: ResolveRequest): ResolveResult {
-  if (req.backend !== 'sycl') {
-    const top = pickHighest(pool)
-    return { status: 'ok', asset: top!, fellBack: false }
-  }
-
-  // SYCL on ubuntu has fp16/fp32 precision axis
-  const hasPrecisionAxis = pool.some((a) => a.version === 'fp16' || a.version === 'fp32')
-  if (!hasPrecisionAxis) {
-    const top = pickHighest(pool)
-    return { status: 'ok', asset: top!, fellBack: false }
-  }
-
-  const precision = req.syclPrecision ?? 'fp16'
-  const exact = pool.filter((a) => a.version === precision)
-  if (exact.length > 0) {
-    return { status: 'ok', asset: pickHighest(exact)!, fellBack: false }
-  }
-
-  const fallback = pickHighest(pool)!
-  return { status: 'ok', asset: fallback, fellBack: true, reason: `sycl ${precision} not available; using ${fallback.version}` }
+function resolveNonCuda(pool: ParsedAsset[]): ResolveResult {
+  const top = pickHighest(pool)
+  return { status: 'ok', asset: top!, fellBack: false }
 }
 
 /** Human-readable list of what IS available for a (os, arch) cell, for error UI. */
@@ -206,7 +182,7 @@ export function resolve(assets: ParsedAsset[], req: ResolveRequest): ResolveResu
   }
 
   if (req.backend !== 'cuda') {
-    return resolveNonCuda(inCell, req)
+    return resolveNonCuda(inCell)
   }
 
   const family = req.family ?? 'cudart'
@@ -279,7 +255,8 @@ export interface LatestResult {
   skippedNewer: number
 }
 
-function buildNum(tag: string): number {
+/** The numeric build number of a `b####` tag. */
+export function buildNum(tag: string): number {
   return Number(tag.slice(1))
 }
 

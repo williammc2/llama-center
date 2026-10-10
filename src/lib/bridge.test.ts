@@ -53,10 +53,6 @@ describe('bridge — lazy shell resolution', () => {
             calls.push('list_backups')
             return []
           },
-          probe_port: async () => {
-            calls.push('probe_port')
-            return false
-          },
           stop_llama_swap: async () => {
             calls.push('stop_llama_swap')
             return { stopped: false, exitCode: null }
@@ -87,7 +83,6 @@ describe('bridge — lazy shell resolution', () => {
     expect(await bridge.swapComponent('llama-swap')).toBeNull()
     expect(await bridge.rollbackComponent('llama-cpp')).toBe(false)
     expect(await bridge.listComponentBackups('llama-swap')).toEqual([])
-    expect(await bridge.probePort(8085)).toBe(false)
     expect(await bridge.stopLlamaSwap()).toEqual({ stopped: false, exitCode: null })
     expect(await bridge.startLlamaSwap()).toEqual({ pid: 42 })
     expect(await bridge.llamaSwapStatus()).toEqual({
@@ -108,7 +103,7 @@ describe('bridge — lazy shell resolution', () => {
     off()
     expect(w.__lcProgress).toBeUndefined()
     expect(calls).toEqual(
-      expect.arrayContaining(['save_config', 'download_and_stage', 'swap_component', 'list_backups', 'probe_port']),
+      expect.arrayContaining(['save_config', 'download_and_stage', 'swap_component', 'list_backups']),
     )
   })
 

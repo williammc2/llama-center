@@ -23,8 +23,6 @@ export interface AppConfig {
   cudaMajor?: 12 | 13
   /** CUDA family; defaults to `cudart` (self-contained). */
   cudaFamily?: 'cudart' | 'plain'
-  /** Pinned llama.cpp nightly (e.g. `b10814`); null = latest-with-asset. */
-  llamaCppPin: string | null
   /** Installed llama.cpp nightly (e.g. `b10816`); null = not installed yet. */
   llamaCppInstalled: string | null
   /** llama-swap port. */
@@ -53,7 +51,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   installDir: '',
   backend: 'cpu',
   cudaFamily: 'cudart',
-  llamaCppPin: null,
   llamaCppInstalled: null,
   llamaSwapPort: 8085,
   llamaSwapInstalled: null,
@@ -129,7 +126,6 @@ export function parseConfig(raw: unknown): AppConfig {
     backend,
     cudaMajor,
     cudaFamily: o.cudaFamily === 'plain' ? 'plain' : 'cudart',
-    llamaCppPin: o.llamaCppPin === null || typeof o.llamaCppPin === 'string' ? o.llamaCppPin : null,
     llamaCppInstalled: o.llamaCppInstalled === null || typeof o.llamaCppInstalled === 'string' ? o.llamaCppInstalled : null,
     llamaSwapPort: num(o.llamaSwapPort, DEFAULT_CONFIG.llamaSwapPort),
     llamaSwapInstalled: swapInstalled(o.llamaSwapInstalled),

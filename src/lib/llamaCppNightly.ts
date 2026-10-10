@@ -15,7 +15,9 @@
  * download URL + SHA-256. The download/verify/swap bytes go through Python
  * (updater.py), mirroring llamaSwapRelease.ts.
  */
-import { parseAssets, resolveLatest, type BuildInfo, type LatestResult, type ParsedAsset, type ResolveRequest } from './assetResolver'
+import { parseAssets, resolveLatest, buildNum, type BuildInfo, type LatestResult, type ParsedAsset, type ResolveRequest } from './assetResolver'
+
+export { buildNum }
 
 export const DEFAULT_RELEASES_URL = 'https://api.github.com/repos/ggml-org/llama.cpp/releases'
 
@@ -73,15 +75,6 @@ export function parseBuild(raw: unknown): ParsedBuild | null {
 /** Map a resolved asset name back to its download URL + SHA-256. */
 export function assetMeta(build: ParsedBuild, assetName: string): AssetMeta | null {
   return build.rawAssets.find((m) => m.name === assetName) ?? null
-}
-
-/**
- * The numeric build number of a `b####` tag (both the resolved nightly and
- * the installed version use this form). Replaces the `Number(tag.slice(1))`
- * that was inlined twice in CppPage.
- */
-export function buildNum(tag: string): number {
-  return Number(tag.slice(1))
 }
 
 /**

@@ -28,7 +28,6 @@ VALID = {
     "backend": "cuda",
     "cuda_major": 13,
     "cuda_family": "cudart",
-    "llama_cpp_pin": None,
     "llama_swap_port": 8085,
     "lang": "pt-BR",
     "start_with_system": False,

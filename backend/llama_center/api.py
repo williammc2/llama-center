@@ -101,8 +101,6 @@ class ConfigApi(_ApiBase):
             "os": d.os,
             "arch": d.arch,
             "suggestCuda": d.suggest_cuda,
-            "cudaMajorHint": d.cuda_major_hint,
-            "gpuName": d.gpu_name,
             "backends": list(d.backends),
         }
 
@@ -137,7 +135,6 @@ class ConfigApi(_ApiBase):
         "installDir": "install_dir",
         "cudaMajor": "cuda_major",
         "cudaFamily": "cuda_family",
-        "llamaCppPin": "llama_cpp_pin",
         "llamaCppInstalled": "llama_cpp_installed",
         "llamaSwapPort": "llama_swap_port",
         "llamaSwapInstalled": "llama_swap_installed",
@@ -222,10 +219,6 @@ class ComponentApi(_ApiBase):
             return updater.list_backups(self._dirs(component).backups)
         except ConfigError:
             return []
-
-    def probe_port(self, port: int) -> bool:
-        """True when something listens on 127.0.0.1:<port>."""
-        return updater.probe_port(port)
 
 
 class ProcessApi(_ApiBase):

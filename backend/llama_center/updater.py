@@ -141,7 +141,7 @@ def download(
                             progress(received, total)
                             last_report = now
     except requests.RequestException as e:
-        part.unlink(missing_ok=True)
+        # Keep the .part: the next attempt resumes from it (Range request).
         raise UpdateError(f"download: {e}") from e
     if expected_sha256:
         actual = sha256_file(part)

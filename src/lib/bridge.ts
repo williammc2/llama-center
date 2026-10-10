@@ -77,8 +77,6 @@ export interface Bridge {
   rollbackComponent(component: string): Promise<boolean>
   /** The component's backup dir names, newest first. */
   listComponentBackups(component: string): Promise<string[]>
-  /** True when something listens on 127.0.0.1:<port>. */
-  probePort(port: number): Promise<boolean>
   /** Spawn the installed llama-swap. error: "port-in-use" | "not-installed" | … */
   startLlamaSwap(): Promise<{ pid?: number; error?: string; port?: number }>
   /** Stop a running llama-swap (managed first, then by image name). */
@@ -130,7 +128,6 @@ interface PywebviewApi {
   swap_component(component: string): Promise<{ backup?: string | null; error?: string }>
   rollback_component(component: string): Promise<{ rolledBack?: boolean; error?: string }>
   list_component_backups(component: string): Promise<string[]>
-  probe_port(port: number): Promise<boolean>
   start_llama_swap(): Promise<{ pid?: number; error?: string; port?: number }>
   stop_llama_swap(): Promise<{ stopped?: boolean; exitCode?: number | null }>
   restart_llama_swap(): Promise<{ pid?: number; error?: string }>
@@ -222,9 +219,6 @@ const pywebview: Bridge = {
   },
   async listComponentBackups(component) {
     return window.pywebview!.api.list_component_backups(component)
-  },
-  async probePort(port) {
-    return window.pywebview!.api.probe_port(port)
   },
   async startLlamaSwap() {
     return window.pywebview!.api.start_llama_swap()
@@ -338,9 +332,6 @@ const browser: Bridge = {
   },
   async listComponentBackups() {
     return []
-  },
-  async probePort() {
-    return false
   },
   async startLlamaSwap() {
     return { error: 'not-installed' }

@@ -115,6 +115,20 @@ class TestDownload:
         with pytest.raises(UpdateError, match="HTTP 404"):
             updater.download(url, tmp_path / "missing.zip")
 
+    def test_network_failure_keeps_part_for_resume(self, tmp_path):
+        """A dropped download keeps its .part so the next attempt resumes."""
+        dest = tmp_path / "big.gguf"
+        part = dest.with_name(dest.name + ".part")
+        part.write_bytes(b"partial-bytes")
+        # A guaranteed-closed port so requests raises ConnectionError.
+        s = socket.socket()
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+        s.close()
+        with pytest.raises(UpdateError, match="download:"):
+            updater.download(f"http://127.0.0.1:{port}/big.gguf", dest, None)
+        assert part.exists()  # kept — the next attempt will resume from it
+
     def test_download_reports_progress(self, server, tmp_path):
         url = f"http://127.0.0.1:{server['port']}/flat.zip"
         data = server["files"]["flat.zip"]
