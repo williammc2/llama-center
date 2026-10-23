@@ -210,6 +210,49 @@ class TestDownload:
             httpd.shutdown()
             httpd.server_close()
 
+    def test_resume_progress_totals(self, tmp_path):
+        """The progress `total` is the full file size, not +resume_from.
+
+        `resume_from` is only part of the total when the server honors Range
+        (206). A 200 (Range ignored) ships the full file, so `clen` alone is
+        the total — otherwise the reported total overflows the real size.
+        """
+        data = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+        class _RangeHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                rng = self.headers.get("range", "")
+                body = data[int(rng.split("=")[1].split("-")[0]):] if rng else data
+                self.send_response(206 if rng else 200)
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), _RangeHandler)
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            dest = tmp_path / "big.gguf"
+            part = dest.with_name(dest.name + ".part")
+            part.write_bytes(data[:10])  # a dropped download left 10 bytes
+            events: list[tuple[int, int | None]] = []
+            updater.download(
+                f"http://127.0.0.1:{port}/big.gguf",
+                dest,
+                sha256_bytes(data),
+                progress=lambda r, t: events.append((r, t)),
+            )
+            assert dest.read_bytes() == data
+            received, total = events[-1]
+            assert received == len(data)
+            assert total == len(data)  # full size, never +resume_from
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
 
 class TestExtract:
     def test_flat_zip_returns_dest(self, server, tmp_path):

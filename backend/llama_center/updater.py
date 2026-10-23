@@ -128,7 +128,14 @@ def download(
             if resume_from and r.status_code == 200:
                 resume_from = 0
             clen = r.headers.get("content-length")
-            total = int(clen) + resume_from if clen and clen.isdigit() else None
+            # `resume_from` is only part of the total when the server honored
+            # the Range request (206). A 200 (Range ignored) already ships the
+            # full file, so `clen` alone is the total.
+            total = (
+                int(clen) + resume_from
+                if (clen and clen.isdigit() and r.status_code == 206)
+                else int(clen) if (clen and clen.isdigit()) else None
+            )
             received = resume_from
             last_report = 0.0
             with open(part, "ab" if resume_from else "wb") as f:

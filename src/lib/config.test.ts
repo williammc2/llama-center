@@ -55,6 +55,15 @@ describe('parseConfig', () => {
     expect(() => parseConfig({ version: 1, installDir: '/x', llamaSwapPort: 80.5 })).toThrow()
   })
 
+  it('cudaFamily: missing → cudart, present → kept', () => {
+    expect(parseConfig({ version: 1, installDir: '/x', backend: 'cuda' }).cudaFamily).toBe('cudart')
+    expect(parseConfig({ version: 1, installDir: '/x', backend: 'cuda', cudaFamily: 'plain' }).cudaFamily).toBe('plain')
+  })
+
+  it('rejects non-cudaFamily values', () => {
+    expect(() => parseConfig({ version: 1, installDir: '/x', backend: 'cuda', cudaFamily: 'metal' })).toThrow(/cudaFamily/)
+  })
+
   it('hfToken: missing → empty string, present → kept', () => {
     expect(parseConfig({ version: 1, installDir: '/x' }).hfToken).toBe('')
     expect(parseConfig({ version: 1, installDir: '/x', hfToken: 'hf_abc' }).hfToken).toBe('hf_abc')

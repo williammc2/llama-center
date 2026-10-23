@@ -32,7 +32,8 @@ export interface Detection {
 
 export function detectOs(platform: string, userAgent: string): DetectedOs {
   const s = `${platform} ${userAgent}`.toLowerCase()
-  // darwin/mac before win — 'darwin' contains 'win'
+  // darwin/mac before win — the platform string can be "Win32" while the
+  // userAgent carries "Macintosh", so both must be checked for both OSes.
   if (s.includes('mac') || s.includes('darwin')) return 'macos'
   if (s.includes('win')) return 'win'
   if (s.includes('linux')) return 'linux'

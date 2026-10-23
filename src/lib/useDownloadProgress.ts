@@ -21,14 +21,18 @@ export function useDownloadProgress(filter?: (p: DownloadProgress) => boolean): 
 
   useEffect(() => {
     let off: (() => void) | undefined
+    let cancelled = false
     void bridge
       .onDownloadProgress((p) => {
+        if (cancelled) return
         if (!filterRef.current || filterRef.current(p)) setProgress(p)
       })
       .then((u) => {
+        if (cancelled) return
         off = u
       })
     return () => {
+      cancelled = true
       off?.()
     }
   }, [])

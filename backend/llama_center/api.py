@@ -265,8 +265,10 @@ class ProcessApi(_ApiBase):
             str(config_file),
         ]
         try:
-            self._managed = proc.LlamaSwapProcess(cmd, d.live, d.logs)
-            return {"pid": self._managed.start()}
+            managed = proc.LlamaSwapProcess(cmd, d.live, d.logs)
+            pid = managed.start()
+            self._managed = managed
+            return {"pid": pid}
         except proc.ProcessError as e:
             return {"error": str(e)}
 
@@ -602,9 +604,14 @@ class ModelApi(_ApiBase):
         p = Path(path)
         try:
             if whole_repo:
-                repo = p.parent if p.is_file() else p
+                repo = p if p.is_dir() else p.parent
                 if not repo.is_dir():
                     return {"error": f"folder not found: {repo}"}
+                # A loose file at the root of a model root has no repo folder to
+                # wipe — rmtree there would delete the root itself (other repos
+                # live there too).
+                if repo in self._model_roots():
+                    return {"error": f"cannot remove the model root {repo}"}
                 n = sum(1 for f in repo.rglob("*.gguf") if f.is_file())
                 shutil.rmtree(repo)
             else:

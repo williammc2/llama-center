@@ -119,13 +119,19 @@ export function parseConfig(raw: unknown): AppConfig {
     return v.filter((d) => d.trim() !== '')
   }
 
+  const cudaFamily = (v: unknown): 'cudart' | 'plain' => {
+    if (v === undefined) return 'cudart'
+    if (v === 'plain' || v === 'cudart') return v
+    throw new Error('config: cudaFamily must be cudart or plain')
+  }
+
   return {
     version: 1,
     firstRunDone: bool(o.firstRunDone, false),
     installDir: str(o.installDir ?? ''),
     backend,
     cudaMajor,
-    cudaFamily: o.cudaFamily === 'plain' ? 'plain' : 'cudart',
+    cudaFamily: cudaFamily(o.cudaFamily),
     llamaCppInstalled: o.llamaCppInstalled === null || typeof o.llamaCppInstalled === 'string' ? o.llamaCppInstalled : null,
     llamaSwapPort: num(o.llamaSwapPort, DEFAULT_CONFIG.llamaSwapPort),
     llamaSwapInstalled: swapInstalled(o.llamaSwapInstalled),

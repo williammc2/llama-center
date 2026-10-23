@@ -71,17 +71,19 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
     install: installApp,
   } = update
 
-  // Countdown shown on the button while a check is in flight: the check is
-  // bounded (CHECK_TIMEOUT_MS), so the user always sees how much longer it
-  // can take — no silent "dead button" to click again.
-  const [, forceTick] = useState(0)
+  const [remaining, setRemaining] = useState(0)
   useEffect(() => {
     if (checkStartedAt === null) return
-    const id = setInterval(() => forceTick((n) => n + 1), 250)
+    const tick = () =>
+      setRemaining(Math.max(0, Math.ceil((checkStartedAt + CHECK_TIMEOUT_MS - Date.now()) / 1000)))
+    const id = setInterval(tick, 250)
+    tick()
     return () => clearInterval(id)
   }, [checkStartedAt])
-  const checkRemaining =
-    checkStartedAt !== null ? Math.max(0, Math.ceil((checkStartedAt + CHECK_TIMEOUT_MS - Date.now()) / 1000)) : 0
+
+  // The countdown: the check is bounded (CHECK_TIMEOUT_MS), so the user always
+  // sees how much longer it can take — no silent "dead button".
+  const checkRemaining = remaining
 
   const dirty = (Object.keys(draft) as (keyof SettingsDraft)[]).some(
     (k) => draft[k] !== cfg[k],

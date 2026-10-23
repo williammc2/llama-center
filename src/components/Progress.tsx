@@ -5,7 +5,9 @@ const mb = (n: number) => `${Math.round(n / (1024 * 1024))} MB`
 /** Download progress bar — % when the server sent Content-Length, else
  *  an indeterminate (pulsing) bar with the byte count. */
 export function Progress({ p }: { p: DownloadProgress }) {
-  const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : null
+  const pct = p.total
+    ? Math.min(100, Math.round((p.received / Math.max(p.total, 1)) * 100))
+    : null
   return (
     <div className="mt-3">
       <div className="h-1.5 w-full overflow-hidden rounded bg-neutral-800">

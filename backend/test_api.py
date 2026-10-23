@@ -571,6 +571,20 @@ class TestModelApi:
         assert res == {"deleted": 2}
         assert not d.exists()
 
+    def test_delete_model_file_loose_at_root(self, home):
+        # A loose file at the root of the default models dir has no repo folder
+        # to wipe — deleting the whole "folder" must not remove the root itself.
+        root = home / "root"
+        Api().save_config({"version": 1, "installDir": str(root)})
+        (root / "models" / "other").mkdir(parents=True)
+        (root / "models" / "other" / "x.gguf").write_bytes(b"1")
+        (root / "models" / "loose.gguf").write_bytes(b"1")
+        res = Api().delete_model_file(str(root / "models" / "loose.gguf"), whole_repo=True)
+        assert res["error"].startswith("cannot remove the model root")
+        # The file survives — the root is not touched.
+        assert (root / "models" / "loose.gguf").exists()
+        assert (root / "models" / "other" / "x.gguf").exists()
+
     def test_export_llama_swap_config(self, home):
         root = home / "root"
         Api().save_config({"version": 1, "installDir": str(root)})
