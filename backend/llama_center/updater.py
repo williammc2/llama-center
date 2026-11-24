@@ -351,6 +351,21 @@ def health_ok(port: int, host: str = "127.0.0.1", timeout: float = 2.0) -> bool:
         return False
 
 
+def stop_basalt() -> bool:
+    """Best-effort stop of a running basalt, by image name.
+
+    Same pattern as stop_llama_swap: Windows taskkill by image name; POSIX
+    `pkill -f basalt` (the binary is named basalt). Returns False when nothing
+    matched (or the tool is missing).
+    """
+    cmd = ["taskkill", "/IM", "basalt.exe", "/F"] if os.name == "nt" else ["pkill", "-f", "basalt"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=15)
+        return r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def stop_llama_swap() -> bool:
     """Best-effort stop of a running llama-swap, by image name.
 

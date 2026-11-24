@@ -93,7 +93,7 @@ class LlamaSwapProcess:
             self._proc.stdout.close()
 
     def stop(self, timeout: float = 10.0) -> int | None:
-        """Terminate (SIGTERM / TerminateProcess), wait, kill if needed.
+        """Terminate the process TREE (SIGTERM / TerminateProcess), wait, kill if needed.
 
         Returns the exit code (None when it was never started). A killed
         process yields a platform-specific code (e.g. -15 / 0xC000013A),
@@ -108,7 +108,16 @@ class LlamaSwapProcess:
                 try:
                     proc.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
-                    proc.kill()
+                    # Children may survive a bare terminate (pyinstaller style) — tree-kill.
+                    if os.name == "nt" and proc.pid:
+                        with contextlib.suppress(Exception):
+                            subprocess.run(
+                                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                                capture_output=True, timeout=15,
+                            )
+                    else:
+                        with contextlib.suppress(Exception):
+                            proc.kill()
                     with contextlib.suppress(subprocess.TimeoutExpired):
                         proc.wait(timeout=5)
             return proc.returncode

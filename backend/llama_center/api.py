@@ -386,7 +386,7 @@ class ProcessApi(_ApiBase):
         except ConfigError:
             return {"stopped": False, "exitCode": None}
         if cfg.server_backend == "basalt":
-            return {"stopped": False, "exitCode": None}
+            return {"stopped": updater.stop_basalt(), "exitCode": None}
         return {"stopped": updater.stop_llama_swap(), "exitCode": None}
 
     def restart_llama_swap(self) -> dict:
