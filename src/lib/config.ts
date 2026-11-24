@@ -43,6 +43,16 @@ export interface AppConfig {
   hfToken: string
   /** Extra model roots (Settings) — scanned alongside <installDir>/models. */
   modelDirs: string[]
+  /** Which server gets managed: llama-swap (default) or basalt. */
+  serverBackend: 'llama-swap' | 'basalt'
+  /** Full path to basalt.exe / basalt. */
+  basaltExe: string
+  /** Args passed to basalt, e.g. "serve --config basalt_config.json --max-context 262144". */
+  basaltArgs: string
+  /** Port basalt listens on (used for probing/status). */
+  basaltPort: number
+  /** Installed basalt version (e.g. "0.5.7"); null = not installed yet. */
+  basaltInstalled: string | null
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -61,6 +71,11 @@ export const DEFAULT_CONFIG: AppConfig = {
   checkUpdatesOnStart: true,
   hfToken: '',
   modelDirs: [],
+  serverBackend: 'llama-swap',
+  basaltExe: '',
+  basaltArgs: '',
+  basaltPort: 8080,
+  basaltInstalled: null,
 }
 
 /**
@@ -124,6 +139,11 @@ export function parseConfig(raw: unknown): AppConfig {
     if (v === 'plain' || v === 'cudart') return v
     throw new Error('config: cudaFamily must be cudart or plain')
   }
+  const serverBackend = (v: unknown): 'llama-swap' | 'basalt' => {
+    if (v === undefined) return 'llama-swap'
+    if (v === 'llama-swap' || v === 'basalt') return v
+    throw new Error(`config: unknown serverBackend ${String(v)}`)
+  }
 
   return {
     version: 1,
@@ -142,6 +162,11 @@ export function parseConfig(raw: unknown): AppConfig {
     checkUpdatesOnStart: bool(o.checkUpdatesOnStart, true),
     hfToken: hfToken(o.hfToken),
     modelDirs: modelDirs(o.modelDirs),
+    serverBackend: serverBackend(o.serverBackend),
+    basaltExe: str(o.basaltExe ?? ''),
+    basaltArgs: str(o.basaltArgs ?? ''),
+    basaltPort: num(o.basaltPort, 8080),
+    basaltInstalled: typeof o.basaltInstalled === 'string' ? o.basaltInstalled : null,
   }
 }
 

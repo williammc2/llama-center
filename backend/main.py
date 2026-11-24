@@ -148,7 +148,8 @@ def _maybe_autostart_swap(api: Api) -> None:
         cfg = load_config()
         if not cfg.auto_start_llama_swap:
             return
-        if not updater.probe_port(cfg.llama_swap_port):
+        port = cfg.basalt_port if cfg.server_backend == "basalt" else cfg.llama_swap_port
+        if not updater.probe_port(port):
             api.start_llama_swap()
     except ConfigError:
         pass

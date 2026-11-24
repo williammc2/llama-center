@@ -46,6 +46,11 @@ class AppConfig:
     check_updates_on_start: bool = True
     hf_token: str = ""  # HuggingFace token (optional); "" = anonymous
     model_dirs: list = field(default_factory=list)  # extra model roots (Settings)
+    server_backend: str = "llama-swap"  # "llama-swap" | "basalt"
+    basalt_exe: str = ""  # full path to basalt.exe / basalt
+    basalt_args: str = ""  # CLI args, e.g. "serve --config basalt_config.json --max-context 262144"
+    basalt_port: int = 8080
+    basalt_installed: str | None = None  # e.g. "0.5.7"; None = not installed yet
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -148,6 +153,28 @@ def parse_config(raw: object) -> AppConfig:
         raise ConfigError(f"config: model_dirs must be a list of strings, got {model_dirs!r}")
     model_dirs = [normalize_install_dir(d) for d in model_dirs if d.strip()]
 
+    server_backend = raw.get("server_backend", "llama-swap")
+    if server_backend not in ("llama-swap", "basalt"):
+        raise ConfigError(f"config: unknown server_backend {server_backend!r}")
+
+    basalt_exe = raw.get("basalt_exe", "")
+    if not isinstance(basalt_exe, str):
+        raise ConfigError(f"config: basalt_exe must be a string, got {basalt_exe!r}")
+    basalt_exe = normalize_install_dir(basalt_exe)
+    basalt_args = raw.get("basalt_args", "")
+    if not isinstance(basalt_args, str):
+        raise ConfigError(f"config: basalt_args must be a string, got {basalt_args!r}")
+
+    basalt_port = raw.get("basalt_port", 8080)
+    if isinstance(basalt_port, bool) or not isinstance(basalt_port, int) or basalt_port <= 0:
+        raise ConfigError(f"config: basalt_port must be a positive int, got {basalt_port!r}")
+
+    basalt_installed = raw.get("basalt_installed")
+    if basalt_installed is not None and not isinstance(basalt_installed, str):
+        raise ConfigError(
+            f"config: basalt_installed must be a string or null, got {basalt_installed!r}"
+        )
+
     def _bool(key: str, dflt: bool) -> bool:
         v = raw.get(key)
         return dflt if v is None else bool(v)
@@ -169,6 +196,11 @@ def parse_config(raw: object) -> AppConfig:
         check_updates_on_start=_bool("check_updates_on_start", True),
         hf_token=hf_token,
         model_dirs=model_dirs,
+        server_backend=server_backend,
+        basalt_exe=basalt_exe,
+        basalt_args=basalt_args,
+        basalt_port=basalt_port,
+        basalt_installed=basalt_installed,
     )
 
 

@@ -140,6 +140,11 @@ class ConfigApi(_ApiBase):
         "llamaSwapInstalled": "llama_swap_installed",
         "startWithSystem": "start_with_system",
         "autoStartLlamaSwap": "auto_start_llama_swap",
+        "serverBackend": "server_backend",
+        "basaltExe": "basalt_exe",
+        "basaltArgs": "basalt_args",
+        "basaltPort": "basalt_port",
+        "basaltInstalled": "basalt_installed",
         "closeToTray": "close_to_tray",
         "checkUpdatesOnStart": "check_updates_on_start",
         "hfToken": "hf_token",
@@ -233,39 +238,73 @@ class ProcessApi(_ApiBase):
         p = d.live / name
         return p if p.exists() else None
 
-    def start_llama_swap(self) -> dict:
-        """Spawn the installed llama-swap. {pid} | {error}.
-
-        `error` is "port-in-use" (UI shows the conflict dialog),
-        "not-installed", or a spawn failure message.
-        """
-        try:
-            d = self._dirs("llama-swap")
-            cfg = load_config()
-        except ConfigError as e:
-            return {"error": str(e)}
+    def _server_target(self, cfg) -> dict:
+        """Resolve (exe, cmd, workdir, logs, port, name) for the configured
+        backend, or {"error": ...}. Backend dispatch lives here — the start/
+        stop/status/logs methods below stay backend-agnostic."""
+        if cfg.server_backend == "basalt":
+            exe = Path(cfg.basalt_exe) if cfg.basalt_exe else None
+            if exe is None or not exe.exists():
+                return {"error": "basalt-not-found"}
+            args = cfg.basalt_args.split()
+            cmd = [str(exe)] + args
+            # basalt resolves a relative --config against its CWD — default
+            # workdir is the exe's own folder; pass an absolute --config to
+            # decouple (shortcut: relative config paths won't resolve).
+            workdir = exe.parent
+            logs = exe.parent / "logs"
+            return {
+                "cmd": cmd,
+                "workdir": workdir,
+                "logs": logs,
+                "port": cfg.basalt_port,
+                "name": "basalt",
+            }
+        d = self._dirs("llama-swap")
         exe = self._exe(d)
         if exe is None:
             return {"error": "not-installed"}
-        if self._managed is not None and self._managed.running:
-            return {"error": "already-running"}
-        if updater.probe_port(cfg.llama_swap_port):
-            return {"error": "port-in-use", "port": cfg.llama_swap_port}
         config_file = next(
             (d.live / n for n in ("llama-swap.json", swc.CONFIG_NAME) if (d.live / n).exists()),
             None,
         )
         if config_file is None:
-            return {"error": "no-config"}
-        cmd = [
-            str(exe),
-            "--listen",
-            f"localhost:{cfg.llama_swap_port}",
-            "--config",
-            str(config_file),
-        ]
+            return {
+                "error": "no-config",
+                "port": cfg.llama_swap_port,
+                "cmd": [], "workdir": d.live, "logs": d.logs, "name": "llama-swap",
+            }
+        cmd = [str(exe), "--listen", f"localhost:{cfg.llama_swap_port}",
+               "--config", str(config_file)]
+        return {
+            "cmd": cmd,
+            "workdir": d.live,
+            "logs": d.logs,
+            "port": cfg.llama_swap_port,
+            "name": "llama-swap",
+        }
+
+    def start_llama_swap(self) -> dict:
+        """Spawn the configured server (llama-swap or basalt). {pid} | {error}.
+
+        `error` is "port-in-use" (UI shows the conflict dialog),
+        "not-installed" / "basalt-not-found", or a spawn failure message.
+        """
         try:
-            managed = proc.LlamaSwapProcess(cmd, d.live, d.logs)
+            cfg = load_config()
+        except ConfigError as e:
+            return {"error": str(e)}
+        target = self._server_target(cfg)
+        if "error" in target and target["error"] != "no-config":
+            return {"error": target["error"]}
+        if self._managed is not None and self._managed.running:
+            return {"error": "already-running"}
+        if updater.probe_port(target["port"]):
+            return {"error": "port-in-use", "port": target["port"]}
+        if "error" in target:
+            return {"error": target["error"]}
+        try:
+            managed = proc.LlamaSwapProcess(target["cmd"], target["workdir"], target["logs"])
             pid = managed.start()
             self._managed = managed
             return {"pid": pid}
@@ -273,12 +312,20 @@ class ProcessApi(_ApiBase):
             return {"error": str(e)}
 
     def stop_llama_swap(self) -> dict:
-        """Stop a running llama-swap: the managed one first, else by image
-        name (an adopted process). {stopped: bool, exitCode: int|null}."""
+        """Stop the managed server (llama-swap or basalt). The managed one is
+        stopped first; for llama-swap an adopted (external) process is
+        also stopped by image name — basalt gets no kill-by-name fallback.
+        {stopped: bool, exitCode: int|null}."""
         if self._managed is not None and self._managed.running:
             code = self._managed.stop()
             self._managed.flush()
             return {"stopped": True, "exitCode": code}
+        try:
+            cfg = load_config()
+        except ConfigError:
+            return {"stopped": False, "exitCode": None}
+        if cfg.server_backend == "basalt":
+            return {"stopped": False, "exitCode": None}
         return {"stopped": updater.stop_llama_swap(), "exitCode": None}
 
     def restart_llama_swap(self) -> dict:
@@ -305,7 +352,10 @@ class ProcessApi(_ApiBase):
             cfg = load_config()
         except ConfigError:
             cfg = None
-        port = cfg.llama_swap_port if cfg else 8085
+        port = (
+            (cfg.basalt_port if cfg.server_backend == "basalt" else cfg.llama_swap_port)
+            if cfg else 8085
+        )
         managed = self._managed is not None and self._managed.running
         pid = self._managed.pid if (self._managed is not None and managed) else None
         healthy = updater.health_ok(port)

@@ -4,6 +4,12 @@ import type { AppConfig } from '../lib/config'
 import type { Detection } from '../lib/detect'
 import { errText } from '../lib/errors'
 import { fetchLatestRelease, pickAsset, type SwapRelease } from '../lib/llamaSwapRelease'
+import {
+  fetchLatestRelease as fetchLatestBasalt,
+  pickAsset as pickBasaltAsset,
+  compareVersions,
+  type BasaltRelease,
+} from '../lib/basaltRelease'
 import { useComponentUpdate } from '../lib/useComponentUpdate'
 import { useUpdateFlow } from '../lib/useUpdateFlow'
 import { Progress } from '../components/Progress'
@@ -18,7 +24,8 @@ interface ServerPageProps {
 }
 
 export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageProps) {
-  const [latest, setLatest] = useState<SwapRelease | null>(null)
+  const isBasalt = cfg.serverBackend === 'basalt'
+  const [latest, setLatest] = useState<SwapRelease | BasaltRelease | null>(null)
   const [conflict, setConflict] = useState(false)
   const [logs, setLogs] = useState<string[]>([])
   const [showLogs, setShowLogs] = useState(false)
@@ -26,13 +33,13 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
   const showLogsRef = useRef(showLogs)
   showLogsRef.current = showLogs
 
-  const installed = cfg.llamaSwapInstalled
+  const installed: string | number | null = isBasalt ? cfg.basaltInstalled : cfg.llamaSwapInstalled
   const portBusy = !!status?.portBusy
 
   const check = async () => {
     setPhase({ status: 'checking' })
     try {
-      setLatest(await fetchLatestRelease())
+      setLatest(isBasalt ? await fetchLatestBasalt() : await fetchLatestRelease())
       setPhase({ status: 'idle' })
     } catch (e) {
       setPhase({ status: 'error', message: errText(e, 'update check failed') })
@@ -41,11 +48,14 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
 
   const { phase, setPhase, setBusy, busyAny, phaseLine, progress } = useUpdateFlow(check)
   const { backups, refresh, rollback, rollbackLabel } = useComponentUpdate(
-    'llama-swap',
+    isBasalt ? 'basalt' : 'llama-swap',
     setPhase,
     setBusy,
-    /v(\d+)/,
-    (version) => onSaveConfig({ ...cfg, llamaSwapInstalled: Number(version) }),
+    isBasalt ? /v(\d+(?:\.\d+)*)/ : /v(\d+)/,
+    (version) =>
+      isBasalt
+        ? onSaveConfig({ ...cfg, basaltInstalled: version })
+        : onSaveConfig({ ...cfg, llamaSwapInstalled: Number(version) }),
   )
 
   useEffect(() => {
@@ -66,10 +76,14 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
   const updateLabel = !latest
     ? null
     : installed === null
-      ? 'Install llama-swap'
-      : latest.version > installed
-        ? `Update to v${latest.version}`
-        : null
+      ? `Install ${isBasalt ? 'basalt' : 'llama-swap'}`
+      : isBasalt
+        ? compareVersions(latest.version as string, installed as string) > 0
+          ? `Update to v${latest.version}`
+          : null
+        : (latest as SwapRelease).version > (installed as number)
+          ? `Update to v${(latest as SwapRelease).version}`
+          : null
 
   const runUpdate = async (adopt: boolean) => {
     if (!latest) return
@@ -80,25 +94,34 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
       setPhase({ status: 'error', message: 'OS/arch not detected — re-run the wizard' })
       return
     }
-    const asset = pickAsset(latest, os, arch)
+    const asset = isBasalt
+      ? pickBasaltAsset(latest as BasaltRelease, os as 'win' | 'linux')
+      : pickAsset(latest as SwapRelease, os, arch)
     if (!asset) {
-      setPhase({ status: 'error', message: `no llama-swap asset for ${os} ${arch}` })
+      setPhase({ status: 'error', message: `no ${isBasalt ? 'basalt' : 'llama-swap'} asset for ${os} ${arch}` })
       return
     }
     setBusy(true)
     try {
       if (portBusy && !adopt) {
-        setPhase({ status: 'installing', message: 'stopping llama-swap…' })
+        setPhase({ status: 'installing', message: `stopping ${isBasalt ? 'basalt' : 'llama-swap'}…` })
         await bridge.stopLlamaSwap()
       }
       setPhase({ status: 'downloading', message: `downloading ${asset.name}…` })
-      await bridge.downloadAndStage('llama-swap', asset.url, asset.sha256)
+      await bridge.downloadAndStage(isBasalt ? 'basalt' : 'llama-swap', asset.url, asset.sha256)
       setPhase({ status: 'installing', message: 'installing…' })
-      const backup = await bridge.swapComponent('llama-swap')
-      await onSaveConfig({ ...cfg, llamaSwapInstalled: latest.version })
+      const backup = await bridge.swapComponent(isBasalt ? 'basalt' : 'llama-swap')
+      const versionLabel = latest.version as string
+      await onSaveConfig(
+        isBasalt
+          ? { ...cfg, basaltInstalled: versionLabel }
+          : { ...cfg, llamaSwapInstalled: Number(versionLabel) },
+      )
       setPhase({
         status: 'done',
-        message: backup ? 'done — previous install kept as a backup (rollback available)' : 'installed',
+        message:
+          (backup ? 'done — previous install kept as a backup (rollback available)' : 'installed') +
+          (isBasalt ? ' — point Settings → basalt.exe at the new install to use it.' : ''),
       })
       await refresh()
     } catch (e) {
@@ -180,12 +203,17 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
 
   // --- render ---------------------------------------------------------------
 
-  const upToDate = latest !== null && installed !== null && latest.version <= installed
+  const upToDate =
+    latest !== null && installed !== null
+      ? isBasalt
+        ? compareVersions(latest.version as string, installed as string) <= 0
+        : (latest as SwapRelease).version <= (installed as number)
+      : false
 
   return (
     <>
       <h2 className="text-lg font-semibold text-neutral-100">Server</h2>
-      <p className="mt-1 text-sm text-neutral-500">llama-swap — start, stop, logs and updates.</p>
+      <p className="mt-1 text-sm text-neutral-500">{isBasalt ? 'basalt' : 'llama-swap'} — start, stop, logs and updates.</p>
 
       <section className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
         <dl className="space-y-1 text-sm">
@@ -200,7 +228,7 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
               {status?.portBusy && (
                 <button
                   type="button"
-                  onClick={() => void bridge.openUrl(`http://localhost:${cfg.llamaSwapPort}/`)}
+                  onClick={() => void bridge.openUrl(`http://localhost:${isBasalt ? cfg.basaltPort : cfg.llamaSwapPort}/`)}
                   className="text-xs text-sky-400 underline decoration-sky-700 transition-colors hover:text-sky-300"
                 >
                   open dashboard
@@ -285,8 +313,12 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
             onClick={() =>
               void bridge.openUrl(
                 latest
-                  ? `https://github.com/mostlygeek/llama-swap/releases/tag/v${latest.version}`
-                  : 'https://github.com/mostlygeek/llama-swap/releases',
+                  ? isBasalt
+                    ? `https://github.com/jesdga95/basalt/releases/tag/v${latest.version}`
+                    : `https://github.com/mostlygeek/llama-swap/releases/tag/v${latest.version}`
+                  : isBasalt
+                    ? 'https://github.com/jesdga95/basalt/releases'
+                    : 'https://github.com/mostlygeek/llama-swap/releases',
               )
             }
             className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 transition-colors hover:border-neutral-500"
@@ -331,7 +363,7 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
         )}
         {upToDate && latest && <p className="mt-3 text-xs text-emerald-600">Up to date (v{installed}).</p>}
         {phaseLine && <p className="mt-3 text-xs text-neutral-400">{phaseLine}</p>}
-        {progress?.component === 'llama-swap' && phase.status === 'downloading' && <Progress p={progress} />}
+        {progress?.component === (isBasalt ? 'basalt' : 'llama-swap') && phase.status === 'downloading' && <Progress p={progress} />}
         {phase.status === 'done' && <p className="mt-3 text-xs text-emerald-600">{phase.message}</p>}
         {phase.status === 'error' && (
           <p role="alert" className="mt-3 text-xs text-red-400">

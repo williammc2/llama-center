@@ -97,8 +97,9 @@ def render_yaml(models: list[SwapModel], llama_server: str) -> str:
     validate_models(models)
     doc: dict = {"healthCheckTimeout": 120, "models": {}}
     for m in models:
+        # No aliases: llama-swap rejects an alias equal to the model name, and
+        # the name itself is the stable id.
         doc["models"][m.name] = {
-            "aliases": [m.name],
             "cmd": build_cmd(m, llama_server),
         }
     return yaml.safe_dump(doc, sort_keys=False, default_flow_style=False, width=10000)

@@ -21,6 +21,10 @@ const inputCls =
 /** The editable settings fields (a subset of AppConfig). */
 interface SettingsDraft {
   llamaSwapPort: number
+  serverBackend: 'llama-swap' | 'basalt'
+  basaltExe: string
+  basaltArgs: string
+  basaltPort: number
   installDir: string
   checkUpdatesOnStart: boolean
   autoStartLlamaSwap: boolean
@@ -32,6 +36,10 @@ interface SettingsDraft {
 
 const draftFrom = (cfg: AppConfig): SettingsDraft => ({
   llamaSwapPort: cfg.llamaSwapPort,
+  serverBackend: cfg.serverBackend,
+  basaltExe: cfg.basaltExe,
+  basaltArgs: cfg.basaltArgs,
+  basaltPort: cfg.basaltPort,
   installDir: cfg.installDir,
   checkUpdatesOnStart: cfg.checkUpdatesOnStart,
   autoStartLlamaSwap: cfg.autoStartLlamaSwap,
@@ -108,16 +116,69 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
       <p className="mt-1 text-sm text-neutral-500">App preferences. Backend and CUDA come from the setup wizard.</p>
 
       <section className="mt-4 space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/60 p-4">
+        <div className="rounded-md border border-neutral-800 bg-neutral-950/60 p-3">
+          <span className="mb-2 block text-xs text-neutral-500">Server backend</span>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => patch({ serverBackend: 'llama-swap' })}
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${draft.serverBackend === 'llama-swap' ? 'bg-sky-600 text-white' : 'border border-neutral-700 text-neutral-300 hover:border-neutral-500'}`}
+            >
+              llama-swap
+            </button>
+            <button
+              type="button"
+              onClick={() => patch({ serverBackend: 'basalt' })}
+              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${draft.serverBackend === 'basalt' ? 'bg-sky-600 text-white' : 'border border-neutral-700 text-neutral-300 hover:border-neutral-500'}`}
+            >
+              basalt
+            </button>
+          </div>
+          {draft.serverBackend === 'basalt' && (
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
+              <label className="block">
+                <span className="mb-1 block text-xs text-neutral-500">basalt.exe path</span>
+                <input
+                  className={inputCls}
+                  value={draft.basaltExe}
+                  onChange={(e) => patch({ basaltExe: e.target.value })}
+                  placeholder="D:asaltinasalt.exe"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs text-neutral-500">port</span>
+                <input
+                  className={inputCls}
+                  type="number"
+                  value={draft.basaltPort}
+                  onChange={(e) => patch({ basaltPort: Number(e.target.value) })}
+                />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs text-neutral-500">args (optional)</span>
+                <input
+                  className={inputCls}
+                  value={draft.basaltArgs}
+                  onChange={(e) => patch({ basaltArgs: e.target.value })}
+                  placeholder="serve --config basalt_config.json --max-context 262144"
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs text-neutral-500">llama-swap port</span>
-            <input
-              className={inputCls}
-              type="number"
-              value={draft.llamaSwapPort}
-              onChange={(e) => patch({ llamaSwapPort: Number(e.target.value) })}
-            />
-          </label>
+          {draft.serverBackend === 'llama-swap' && (
+            <label className="block">
+              <span className="mb-1 block text-xs text-neutral-500">llama-swap port</span>
+              <input
+                className={inputCls}
+                type="number"
+                value={draft.llamaSwapPort}
+                onChange={(e) => patch({ llamaSwapPort: Number(e.target.value) })}
+              />
+            </label>
+          )}
           <label className="block">
             <span className="mb-1 block text-xs text-neutral-500">install dir</span>
             <input

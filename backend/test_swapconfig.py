@@ -126,12 +126,12 @@ class TestRenderParse:
         assert back[1].name == "small"
         assert back[1].ctx_size == swc.DEFAULT_CTX
 
-    def test_render_is_valid_yaml_with_aliases(self):
+    def test_render_is_valid_yaml_without_aliases(self):
         import yaml
 
         doc = yaml.safe_load(swc.render_yaml([full_model()], SERVER))
         assert doc["healthCheckTimeout"] == 120
-        assert doc["models"]["example-model"]["aliases"] == ["example-model"]
+        assert "aliases" not in doc["models"]["example-model"]
         assert SERVER in doc["models"]["example-model"]["cmd"]
 
     def test_parse_user_config(self):
