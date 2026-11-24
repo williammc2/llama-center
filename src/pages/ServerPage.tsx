@@ -33,7 +33,11 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
   const showLogsRef = useRef(showLogs)
   showLogsRef.current = showLogs
 
-  const installed: string | number | null = isBasalt ? cfg.basaltInstalled : cfg.llamaSwapInstalled
+  const basaltInstallFound =
+    isBasalt && !!(cfg.basaltDir || cfg.basaltExe)
+  const installed: string | number | null = isBasalt
+    ? (cfg.basaltInstalled ?? (basaltInstallFound ? 'found' : null))
+    : cfg.llamaSwapInstalled
   const portBusy = !!status?.portBusy
 
   const check = async () => {

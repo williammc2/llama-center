@@ -37,24 +37,50 @@ StopFn = Callable[[], None]
 KEEP_BACKUPS = 2
 CHUNK = 1 << 16  # 64 KiB
 
-# User-managed files that live inside the live dir but are NOT part of the
-# release payload — they must survive a swap (and a rollback).
-PRESERVED_CONFIGS = ("llama-swap.yaml", "llama-swap.json")
+# User-managed files/dirs that live inside the live dir but are NOT part of
+# the release payload — they must survive a swap (and a rollback).
+PRESERVED_CONFIGS = {
+    "llama-swap": ("llama-swap.yaml", "llama-swap.json"),
+    "basalt": ("basalt_config.json", "models"),
+}
+DEFAULT_PRESERVED = ("llama-swap.yaml", "llama-swap.json")
 
 
-def _saved_configs(live: Path) -> dict[str, bytes]:
-    """Snapshot the preserved config files in `live` (may be empty)."""
-    saved: dict[str, bytes] = {}
-    for name in PRESERVED_CONFIGS:
+def _preserve_names(component: str) -> tuple[str, ...]:
+    return PRESERVED_CONFIGS.get(component, DEFAULT_PRESERVED)
+
+
+def _saved_configs(live: Path, component: str) -> dict[str, Path]:
+    """Snapshot preserved files/dirs to a temp dir. {name: snapshot_path}."""
+    tmp = live.parent / f".preserve-{time.time_ns()}"
+    tmp.mkdir(parents=True, exist_ok=True)
+    saved: dict[str, Path] = {}
+    for name in _preserve_names(component):
         p = live / name
         if p.is_file():
-            saved[name] = p.read_bytes()
+            dest = tmp / name
+            dest.write_bytes(p.read_bytes())
+            saved[name] = dest
+        elif p.is_dir():
+            dest = tmp / name
+            shutil.copytree(str(p), str(dest))
+            saved[name] = dest
     return saved
 
 
-def _restore_configs(live: Path, saved: dict[str, bytes]) -> None:
-    for name, data in saved.items():
-        (live / name).write_bytes(data)
+def _restore_configs(live: Path, saved: dict[str, Path]) -> None:
+    for name, src in saved.items():
+        dst = live / name
+        if src.is_file():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src), str(dst))
+        elif src.is_dir():
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(str(src), str(dst))
+    if saved:
+        tmp = next(iter(saved.values())).parent
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 class UpdateError(Exception):
@@ -230,7 +256,7 @@ def atomic_swap(
         raise UpdateError("swap: staging is missing or empty")
     backups.mkdir(parents=True, exist_ok=True)
     backup_name = None
-    saved = _saved_configs(live) if live.exists() else {}
+    saved = _saved_configs(live, component) if live.exists() else {}
     if live.exists():
         backup_name = _backup_name(component, label)
         shutil.move(str(live), str(backups / backup_name))
@@ -272,7 +298,7 @@ def rollback(dirs: ComponentDirs) -> bool:
     if not names:
         return False
     backup = backups / names[0]
-    saved = _saved_configs(live) if live.exists() else {}
+    saved = _saved_configs(live, backups.name) if live.exists() else {}
     if live.exists():
         shutil.move(str(live), str(backups / (names[0] + ".failed")))
     shutil.move(str(backup), str(live))

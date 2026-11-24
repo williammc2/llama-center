@@ -55,17 +55,59 @@ class _ApiBase:
     # --- shared helpers ---------------------------------------------------
 
     def _dirs(self, component: str = "llama-swap") -> updater.ComponentDirs:
-        """Managed paths for the configured install dir. Raises ConfigError."""
+        """Managed paths for the configured install dir. Raises ConfigError.
+
+        For basalt the live dir is the user's configured install folder
+        (Settings → Server backend → Install folder, derived from basaltExe);
+        llama-swap uses the app's install dir."""
         cfg = load_config()
         if not cfg.install_dir:
             raise ConfigError("install_dir not set — run the wizard first")
+        if component == "basalt":
+            live = self._basalt_live(cfg)
+            if live is None:
+                raise ConfigError("basalt install folder not set — set it in Settings")
+            return updater.ComponentDirs(
+                live=Path(live),
+                downloads=Path(cfg.install_dir) / "downloads",
+                staging=Path(cfg.install_dir) / "downloads" / "staging-basalt",
+                backups=Path(cfg.install_dir) / "backups" / "basalt",
+                logs=Path(cfg.install_dir) / "logs",
+            )
         return updater.component_dirs(cfg.install_dir, component)
+
+    @staticmethod
+    def _basalt_exe_name() -> str:
+        return "basalt.exe" if os.name == "nt" else "basalt"
+
+    def _basalt_exe(self, cfg) -> Path | None:
+        """The configured basalt exe — explicit override or derived from
+        basaltDir (<dir>/bin/basalt)."""
+        if cfg.basalt_exe:
+            p = Path(cfg.basalt_exe)
+            return p if p.exists() else None
+        live = self._basalt_live(cfg)
+        if live is None:
+            return None
+        p = Path(live) / "bin" / self._basalt_exe_name()
+        return p if p.exists() else None
+
+    def _basalt_live(self, cfg) -> str | None:
+        """The basalt install folder used by the update machinery."""
+        if cfg.basalt_dir:
+            return cfg.basalt_dir
+        if cfg.basalt_exe:
+            parent = Path(cfg.basalt_exe).parent
+            return str(parent.parent) if parent.name == "bin" else str(parent)
+        return None
 
     def _installed_label(self, component: str) -> str | None:
         """What is currently installed, for the backup dir name."""
         cfg = load_config()
         if component == "llama-swap" and cfg.llama_swap_installed:
             return f"v{cfg.llama_swap_installed}"
+        if component == "basalt" and cfg.basalt_installed:
+            return f"v{cfg.basalt_installed}"
         if component == "llama-cpp" and cfg.llama_cpp_installed:
             return cfg.llama_cpp_installed
         return None
@@ -141,6 +183,7 @@ class ConfigApi(_ApiBase):
         "startWithSystem": "start_with_system",
         "autoStartLlamaSwap": "auto_start_llama_swap",
         "serverBackend": "server_backend",
+        "basaltDir": "basalt_dir",
         "basaltExe": "basalt_exe",
         "basaltArgs": "basalt_args",
         "basaltPort": "basalt_port",
@@ -243,16 +286,34 @@ class ProcessApi(_ApiBase):
         backend, or {"error": ...}. Backend dispatch lives here — the start/
         stop/status/logs methods below stay backend-agnostic."""
         if cfg.server_backend == "basalt":
-            exe = Path(cfg.basalt_exe) if cfg.basalt_exe else None
-            if exe is None or not exe.exists():
-                return {"error": "basalt-not-found"}
+            exe = self._basalt_exe(cfg)
+            if exe is None:
+                return {"error": "basalt-not-found", "port": cfg.basalt_port}
             args = cfg.basalt_args.split()
             cmd = [str(exe)] + args
-            # basalt resolves a relative --config against its CWD — default
-            # workdir is the exe's own folder; pass an absolute --config to
-            # decouple (shortcut: relative config paths won't resolve).
-            workdir = exe.parent
-            logs = exe.parent / "logs"
+            # basalt resolves a relative --config against its CWD — derive the
+            # workdir from the config arg when possible, else from basaltDir.
+            cfg_arg = None
+            for i, a in enumerate(args):
+                if a in ("--config", "-c") and i + 1 < len(args):
+                    cfg_arg = args[i + 1]
+                    break
+            workdir = None
+            if cfg_arg:
+                p = Path(cfg_arg)
+                if not p.is_absolute():
+                    for base in (self._basalt_live(cfg), exe.parent, exe.parent.parent):
+                        if base:
+                            cand = Path(base) / cfg_arg
+                            if cand.exists():
+                                p = cand
+                                break
+                    else:
+                        p = exe.parent / cfg_arg
+                workdir = p.parent if p.parent.exists() else exe.parent
+            if workdir is None:
+                workdir = Path(self._basalt_live(cfg) or exe.parent)
+            logs = workdir / "logs"
             return {
                 "cmd": cmd,
                 "workdir": workdir,

@@ -45,7 +45,10 @@ export interface AppConfig {
   modelDirs: string[]
   /** Which server gets managed: llama-swap (default) or basalt. */
   serverBackend: 'llama-swap' | 'basalt'
-  /** Full path to basalt.exe / basalt. */
+  /** basalt install root (bin/basalt.exe + basalt_config.json). Optional
+   *  when basaltExe is set. */
+  basaltDir: string
+  /** Full path to basalt.exe / basalt. Empty → derived from basaltDir. */
   basaltExe: string
   /** Args passed to basalt, e.g. "serve --config basalt_config.json --max-context 262144". */
   basaltArgs: string
@@ -72,6 +75,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   hfToken: '',
   modelDirs: [],
   serverBackend: 'llama-swap',
+  basaltDir: '',
   basaltExe: '',
   basaltArgs: '',
   basaltPort: 8080,
@@ -163,6 +167,7 @@ export function parseConfig(raw: unknown): AppConfig {
     hfToken: hfToken(o.hfToken),
     modelDirs: modelDirs(o.modelDirs),
     serverBackend: serverBackend(o.serverBackend),
+    basaltDir: str(o.basaltDir ?? ''),
     basaltExe: str(o.basaltExe ?? ''),
     basaltArgs: str(o.basaltArgs ?? ''),
     basaltPort: num(o.basaltPort, 8080),

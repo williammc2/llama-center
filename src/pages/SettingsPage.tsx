@@ -22,6 +22,7 @@ const inputCls =
 interface SettingsDraft {
   llamaSwapPort: number
   serverBackend: 'llama-swap' | 'basalt'
+  basaltDir: string
   basaltExe: string
   basaltArgs: string
   basaltPort: number
@@ -37,6 +38,7 @@ interface SettingsDraft {
 const draftFrom = (cfg: AppConfig): SettingsDraft => ({
   llamaSwapPort: cfg.llamaSwapPort,
   serverBackend: cfg.serverBackend,
+  basaltDir: cfg.basaltDir,
   basaltExe: cfg.basaltExe,
   basaltArgs: cfg.basaltArgs,
   basaltPort: cfg.basaltPort,
@@ -137,12 +139,12 @@ export function SettingsPage({ cfg, onSaveConfig, onReconfigure, update }: Setti
           {draft.serverBackend === 'basalt' && (
             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[2fr_1fr]">
               <label className="block">
-                <span className="mb-1 block text-xs text-neutral-500">basalt.exe path</span>
+                <span className="mb-1 block text-xs text-neutral-500">install folder</span>
                 <input
                   className={inputCls}
-                  value={draft.basaltExe}
-                  onChange={(e) => patch({ basaltExe: e.target.value })}
-                  placeholder="D:asaltinasalt.exe"
+                  value={draft.basaltDir}
+                  onChange={(e) => patch({ basaltDir: e.target.value })}
+                  placeholder="D:asalt"
                 />
               </label>
               <label className="block">

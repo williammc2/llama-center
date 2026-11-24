@@ -47,7 +47,8 @@ class AppConfig:
     hf_token: str = ""  # HuggingFace token (optional); "" = anonymous
     model_dirs: list = field(default_factory=list)  # extra model roots (Settings)
     server_backend: str = "llama-swap"  # "llama-swap" | "basalt"
-    basalt_exe: str = ""  # full path to basalt.exe / basalt
+    basalt_dir: str = ""  # basalt install root (bin/basalt.exe + basalt_config.json)
+    basalt_exe: str = ""  # full path to basalt.exe / basalt; empty → derived from basalt_dir
     basalt_args: str = ""  # CLI args, e.g. "serve --config basalt_config.json --max-context 262144"
     basalt_port: int = 8080
     basalt_installed: str | None = None  # e.g. "0.5.7"; None = not installed yet
@@ -157,6 +158,10 @@ def parse_config(raw: object) -> AppConfig:
     if server_backend not in ("llama-swap", "basalt"):
         raise ConfigError(f"config: unknown server_backend {server_backend!r}")
 
+    basalt_dir = raw.get("basalt_dir", "")
+    if not isinstance(basalt_dir, str):
+        raise ConfigError(f"config: basalt_dir must be a string, got {basalt_dir!r}")
+    basalt_dir = normalize_install_dir(basalt_dir)
     basalt_exe = raw.get("basalt_exe", "")
     if not isinstance(basalt_exe, str):
         raise ConfigError(f"config: basalt_exe must be a string, got {basalt_exe!r}")
@@ -197,6 +202,7 @@ def parse_config(raw: object) -> AppConfig:
         hf_token=hf_token,
         model_dirs=model_dirs,
         server_backend=server_backend,
+        basalt_dir=basalt_dir,
         basalt_exe=basalt_exe,
         basalt_args=basalt_args,
         basalt_port=basalt_port,
