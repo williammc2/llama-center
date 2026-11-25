@@ -41,7 +41,7 @@ CHUNK = 1 << 16  # 64 KiB
 # the release payload — they must survive a swap (and a rollback).
 PRESERVED_CONFIGS = {
     "llama-swap": ("llama-swap.yaml", "llama-swap.json"),
-    "basalt": ("basalt_config.json", "models"),
+    "basalt": ("basalt_config.json", "basalt_config.totals.json", "models", "data", "*.bat"),
 }
 DEFAULT_PRESERVED = ("llama-swap.yaml", "llama-swap.json")
 
@@ -51,26 +51,29 @@ def _preserve_names(component: str) -> tuple[str, ...]:
 
 
 def _saved_configs(live: Path, component: str) -> dict[str, Path]:
-    """Snapshot preserved files/dirs to a temp dir. {name: snapshot_path}."""
+    """Snapshot preserved files/dirs to a temp dir. {rel_path: snapshot_path}.
+    Patterns (e.g. "*.bat") expand to every matching path."""
     tmp = live.parent / f".preserve-{time.time_ns()}"
     tmp.mkdir(parents=True, exist_ok=True)
     saved: dict[str, Path] = {}
-    for name in _preserve_names(component):
-        p = live / name
-        if p.is_file():
-            dest = tmp / name
-            dest.write_bytes(p.read_bytes())
-            saved[name] = dest
-        elif p.is_dir():
-            dest = tmp / name
-            shutil.copytree(str(p), str(dest))
-            saved[name] = dest
+    for pat in _preserve_names(component):
+        for src in sorted(live.glob(pat)):
+            rel = src.relative_to(live)
+            dest = tmp / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_file():
+                shutil.copy2(str(src), str(dest))
+            elif src.is_dir():
+                shutil.copytree(str(src), str(dest))
+            else:
+                continue
+            saved[str(rel)] = dest
     return saved
 
 
 def _restore_configs(live: Path, saved: dict[str, Path]) -> None:
-    for name, src in saved.items():
-        dst = live / name
+    for rel, src in saved.items():
+        dst = live / rel
         if src.is_file():
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(src), str(dst))
@@ -348,21 +351,6 @@ def health_ok(port: int, host: str = "127.0.0.1", timeout: float = 2.0) -> bool:
         r = requests.get(f"http://{host}:{port}/health", timeout=timeout)
         return r.status_code == 200
     except requests.RequestException:
-        return False
-
-
-def stop_basalt() -> bool:
-    """Best-effort stop of a running basalt, by image name.
-
-    Same pattern as stop_llama_swap: Windows taskkill by image name; POSIX
-    `pkill -f basalt` (the binary is named basalt). Returns False when nothing
-    matched (or the tool is missing).
-    """
-    cmd = ["taskkill", "/IM", "basalt.exe", "/F"] if os.name == "nt" else ["pkill", "-f", "basalt"]
-    try:
-        r = subprocess.run(cmd, capture_output=True, timeout=15)
-        return r.returncode == 0
-    except (OSError, subprocess.SubprocessError):
         return False
 
 

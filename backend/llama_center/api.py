@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import shlex
 import shutil
 import threading
 from collections.abc import Callable
@@ -289,7 +290,7 @@ class ProcessApi(_ApiBase):
             exe = self._basalt_exe(cfg)
             if exe is None:
                 return {"error": "basalt-not-found", "port": cfg.basalt_port}
-            args = cfg.basalt_args.split()
+            args = shlex.split(cfg.basalt_args)
             cmd = [str(exe)] + args
             # basalt resolves a relative --config against its CWD — derive the
             # workdir from the config arg when possible, else from basaltDir.
@@ -386,7 +387,9 @@ class ProcessApi(_ApiBase):
         except ConfigError:
             return {"stopped": False, "exitCode": None}
         if cfg.server_backend == "basalt":
-            return {"stopped": updater.stop_basalt(), "exitCode": None}
+            # No kill-by-image-name fallback: the running .bat server must never
+            # be killed by the manager. Only the managed process is stopped.
+            return {"stopped": False, "exitCode": None}
         return {"stopped": updater.stop_llama_swap(), "exitCode": None}
 
     def restart_llama_swap(self) -> dict:
