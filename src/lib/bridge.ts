@@ -80,7 +80,7 @@ export interface Bridge {
   /** Spawn the installed llama-swap. error: "port-in-use" | "not-installed" | … */
   startLlamaSwap(): Promise<{ pid?: number; error?: string; port?: number }>
   /** Stop a running llama-swap (managed first, then by image name). */
-  stopLlamaSwap(): Promise<{ stopped: boolean; exitCode: number | null }>
+  stopLlamaSwap(): Promise<{ stopped: boolean; exitCode: number | null; unloaded?: boolean }>
   /** Restart the MANAGED llama-swap (stop + start, no race). External = not-running. */
   restartLlamaSwap(): Promise<{ pid?: number; error?: string }>
   /** Structured runtime status for the card (poll ~2s). */
@@ -129,7 +129,7 @@ interface PywebviewApi {
   rollback_component(component: string): Promise<{ rolledBack?: boolean; error?: string }>
   list_component_backups(component: string): Promise<string[]>
   start_llama_swap(): Promise<{ pid?: number; error?: string; port?: number }>
-  stop_llama_swap(): Promise<{ stopped?: boolean; exitCode?: number | null }>
+  stop_llama_swap(): Promise<{ stopped?: boolean; exitCode?: number | null; unloaded?: boolean }>
   restart_llama_swap(): Promise<{ pid?: number; error?: string }>
   llama_swap_status(): Promise<SwapStatus>
   llama_swap_logs(n?: number): Promise<string[]>
@@ -225,7 +225,7 @@ const pywebview: Bridge = {
   },
   async stopLlamaSwap() {
     const res = await window.pywebview!.api.stop_llama_swap()
-    return { stopped: res.stopped === true, exitCode: res.exitCode ?? null }
+    return { stopped: res.stopped === true, exitCode: res.exitCode ?? null, ...(res.unloaded === true ? { unloaded: true } : {}) }
   },
   async restartLlamaSwap() {
     return window.pywebview!.api.restart_llama_swap()

@@ -187,7 +187,11 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
       const r = await bridge.stopLlamaSwap()
       setPhase({
         status: r.stopped ? 'done' : 'error',
-        message: r.stopped ? `stopped (exit code ${r.exitCode ?? 'n/a'})` : 'not running (or not found)',
+        message: r.stopped
+          ? r.unloaded
+            ? 'model unloaded'
+            : `stopped (exit code ${r.exitCode ?? 'n/a'})`
+          : 'not running (or not found)',
       })
     } finally {
       setBusy(false)
@@ -274,7 +278,7 @@ export function ServerPage({ cfg, detection, onSaveConfig, status }: ServerPageP
                 disabled={busyAny}
                 className="rounded-md border border-amber-700 px-4 py-1.5 text-sm font-medium text-amber-300 transition-colors hover:border-amber-500 disabled:opacity-50"
               >
-                Stop
+                {isBasalt ? 'Unload' : 'Stop'}
               </button>
               {status.managed && (
                 <button

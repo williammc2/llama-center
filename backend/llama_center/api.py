@@ -388,7 +388,18 @@ class ProcessApi(_ApiBase):
             return {"stopped": False, "exitCode": None}
         if cfg.server_backend == "basalt":
             # No kill-by-image-name fallback: the running .bat server must never
-            # be killed by the manager. Only the managed process is stopped.
+            # be killed by the manager. Instead unload the model via the API.
+            try:
+                r = requests.post(
+                    f"http://127.0.0.1:{cfg.basalt_port}/v1/unload",
+                    json={},
+                    headers={"Content-Type": "application/json"},
+                    timeout=30,
+                )
+                if r.ok:
+                    return {"stopped": True, "exitCode": None, "unloaded": True}
+            except requests.RequestException:
+                pass
             return {"stopped": False, "exitCode": None}
         return {"stopped": updater.stop_llama_swap(), "exitCode": None}
 
